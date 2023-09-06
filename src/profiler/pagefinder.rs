@@ -1,0 +1,78 @@
+use crate::profiler::utils::{self, Consts};
+
+use procfs::process::{Process, PageInfo};
+use strum::EnumCount;
+use strum_macros::EnumCount as EnumCountMacro;
+
+#[derive(Clone, Copy, EnumCountMacro)]
+enum BitPattern {
+    ZeroZeroZero,
+    ZeroZeroOne,
+    OneZeroZero,
+    OneZeroOne,
+}
+
+impl BitPattern {
+    fn get_bits(self) -> u8 {
+        match self {
+            Self::ZeroZeroZero => 0b000,
+            Self::ZeroZeroOne => 0b001,
+            Self::OneZeroZero => 0b100,
+            Self::OneZeroOne => 0b101,
+        }
+    }
+}
+
+struct PageCandidate {
+    page_number: u32,
+    above_page: u32,
+    below_page: u32,
+
+    bit_positions: [i16; Consts::MAX_BITS],
+    score: i16,
+    total_bit_flips: i16,
+}
+
+struct PageData {
+    data: [u16; Consts::PAGE_SIZE / 2],
+    above_data: [u16; Consts::PAGE_SIZE / 2],
+    below_data: [u16; Consts::PAGE_SIZE / 2],
+}
+
+struct PageSuppression {
+    pattern_data: [[[i16; BitPattern::COUNT]; Consts::MAX_BITS]; Consts::PAGE_SIZE / 2],
+}
+
+impl Default for PageSuppression {
+    fn default() -> Self {
+        Self {
+            pattern_data: [[[0; BitPattern::COUNT]; Consts::MAX_BITS]; Consts::PAGE_SIZE / 2],
+        }
+    }
+}
+
+pub(crate) fn some_stuff(virtual_address: u8) -> u64 {
+    let process = Process::myself().expect("Failed to read process");
+    let maps = process.maps().expect("Failed to read process memory maps");
+    let mut pmap = process
+        .pagemap()
+        .expect("Failed to fetch pagemap of process");
+
+    println!("Process: {:#?}", process);
+    println!("Maps: {:#?}", maps);
+
+    for m in maps.memory_maps {
+        if let Ok(page_frame_number) = utils::get_page_frame_number(&mut pmap, m.address.0 as usize) {
+            let phys_addr = utils::get_phys_addr(&mut pmap, m.address.0 as usize).expect("Couldnt get phys address");
+            println!(" PFN: {}\tPHYS: {}", page_frame_number, phys_addr);
+        } else {
+            println!("Found nothing for {}", m.address.0);
+        }
+        let page_info = pmap.get_info((m.address.0 / Consts::PAGE_SIZE as u64) as usize);
+
+        //println!("GOT: {},\tPI: {:?}", page_frame_number, page_info);
+    }
+
+    virtual_address as u64
+}
+
