@@ -1,8 +1,9 @@
-use crate::profiler::utils::{self, Consts};
-
+use nix::libc::__u32;
 use procfs::process::{Process, PageInfo};
 use strum::EnumCount;
 use strum_macros::EnumCount as EnumCountMacro;
+
+use crate::profiler::utils::{self, Consts};
 
 #[derive(Clone, Copy, EnumCountMacro)]
 enum BitPattern {
@@ -39,16 +40,8 @@ struct PageData {
     below_data: [u16; Consts::PAGE_SIZE / 2],
 }
 
-struct PageSuppression {
-    pattern_data: [[[i16; BitPattern::COUNT]; Consts::MAX_BITS]; Consts::PAGE_SIZE / 2],
-}
-
-impl Default for PageSuppression {
-    fn default() -> Self {
-        Self {
-            pattern_data: [[[0; BitPattern::COUNT]; Consts::MAX_BITS]; Consts::PAGE_SIZE / 2],
-        }
-    }
+fn find_page_candidate(pages: &[PageCandidate], page_nbr: u32) -> Option<&PageCandidate> {
+    pages.iter().find(|page| page.page_number == page_nbr)
 }
 
 pub(crate) fn some_stuff(virtual_address: u8) -> u64 {

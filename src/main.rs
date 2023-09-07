@@ -1,25 +1,46 @@
 mod profiler;
-use memmap2::{Mmap, MmapOptions};
+
+use clap::{Args, Parser, Subcommand};
+
+#[derive(Parser)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Profiles bit flip locations and suitable pages for a rowhammer attack
+    Profile(ProfilerArgs),
+}
+
+#[derive(Args, Debug)]
+struct ProfilerArgs {
+    /// How much of the physical memory that should be allocated during profiling
+    #[arg(long, short = 'p', default_value_t = 0.5)]
+    fraction_of_phys_memory: f64,
+    /// How many cores are on the target machine
+    #[arg(long, short, default_value_t = 4)]
+    cores: u8,
+    /// How many ram sticks on the target machine
+    #[arg(long, short, default_value_t = 2)]
+    dimms: u8,
+}
+
 fn main() {
-    //profiler::pagefinder::some_stuff(2);
-    let size = profiler::utils::get_phys_memory_size();
-
-    let mut mmap = MmapOptions::new()
-        .len(16638189568)
-        .map_anon()
-        .expect("error");
-    println!("Map: {:#?}", mmap);
-
-    let mut ptr = mmap.as_mut_ptr();
-    println!("Ptr before: {:#?}", ptr);
-
-    unsafe {
-        println!("Before change: {}", *ptr);
-        *ptr = 1;
-        println!("After change: {}", *ptr);
-        ptr = ptr.offset(1);
+    let cli = Cli::parse();
+    match cli.command {
+        None => println!("Running main program"),
+        Some(command) => {
+            match command {
+                Command::Profile(args) => {
+                    profiler::rowhammer::main(
+                        args.fraction_of_phys_memory,
+                        args.cores,
+                        args.dimms,
+                    );
+                },
+            }
+        },
     }
-
-    println!("Ptr after: {:#?}", ptr);
-    println!("SIZE: {}", size);
 }

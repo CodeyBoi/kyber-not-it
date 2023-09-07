@@ -13,3 +13,4 @@ strum = "0.25.0"
 strum_macros = "0.25.2"
 nix = "0.27.1"
 clap = { version = "4.4.2", features = ["derive"] }
+rand = "0.8.5"
