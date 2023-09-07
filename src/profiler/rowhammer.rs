@@ -9,9 +9,7 @@ use procfs::{
     ProcResult,
 };
 
-use crate::profiler::utils::setup_mapping;
-
-use super::utils::{get_page_frame_number, Consts};
+use crate::profiler::utils::{setup_mapping, get_page_frame_number, Consts};
 
 const NO_OF_READS: u64 = 27 * 100 * 1000 * 4;
 const STRIPE: [u8; 3] = [0x00FF, 0, 0x00FF];
@@ -38,7 +36,7 @@ fn collect_pages_by_row(
 ) -> ProcResult<Vec<Vec<*mut u8>>> {
     let base_ptr = mmap.as_mut_ptr();
     let mut pages_by_row: Vec<Vec<*mut u8>> = vec![Vec::new(); mmap.len() / Consts::PAGE_SIZE];
-    for i in 0..mmap.len() {
+    for i in 0..pages_by_row.len() {
         let offset = i * Consts::PAGE_SIZE;
         unsafe {
             let virtual_addr = base_ptr.add(offset);

@@ -5,25 +5,6 @@ use strum_macros::EnumCount as EnumCountMacro;
 
 use crate::profiler::utils::{self, Consts};
 
-#[derive(Clone, Copy, EnumCountMacro)]
-enum BitPattern {
-    ZeroZeroZero,
-    ZeroZeroOne,
-    OneZeroZero,
-    OneZeroOne,
-}
-
-impl BitPattern {
-    fn get_bits(self) -> u8 {
-        match self {
-            Self::ZeroZeroZero => 0b000,
-            Self::ZeroZeroOne => 0b001,
-            Self::OneZeroZero => 0b100,
-            Self::OneZeroOne => 0b101,
-        }
-    }
-}
-
 struct PageCandidate {
     page_number: u32,
     above_page: u32,
