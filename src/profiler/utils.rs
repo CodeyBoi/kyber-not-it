@@ -63,7 +63,10 @@ pub(crate) fn setup_mapping(fraction_of_phys_memory: f64) -> MmapMut {
 
 pub(crate) fn get_page_frame_number(pagemap: &mut PageMap, virtual_addr: usize) -> ProcResult<u64> {
     match pagemap.get_info(virtual_addr / Consts::PAGE_SIZE as usize)? {
-        PageInfo::MemoryPage(mempage) => Ok(mempage.get_page_frame_number().0),
+        PageInfo::MemoryPage(mempage) => {
+            //println!("FLAGS: {:#?}", mempage);
+            Ok(mempage.get_page_frame_number().0)
+        },
         PageInfo::SwapPage(_) => unimplemented!("Swap pages are not implemented"),
     }
 }

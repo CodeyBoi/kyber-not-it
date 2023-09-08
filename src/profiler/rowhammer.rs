@@ -5,6 +5,7 @@ use std::{
     arch::x86_64::_mm_clflush,
     mem::size_of,
     ops::{Range, RangeFull},
+    time::Instant
 };
 
 use memmap2::MmapMut;
@@ -43,11 +44,11 @@ fn get_hashes(bridge: Bridge) -> [Vec<u8>; 6] {
     }
 }
 
-fn rowhammer(above: *mut u8, below: *mut u8) -> u64 {
+fn rowhammer(above_page: *mut u8, below_page: *mut u8) -> u64 {
     // let t0 = rdtsc();
     let mut sum = 0;
     for _ in 0..NO_OF_READS {
-        for ptr in [above, below] {
+        for ptr in [above_page, below_page] {
             unsafe {
                 // To avoid the compiler optimizing out the loop (it might or might not do this)
                 sum += ptr.read_volatile() as u64;
@@ -124,9 +125,11 @@ impl Page {
     fn new(ptr: *mut u8, pfn: u64) -> Self {
         Self { ptr, pfn }
     }
+
     fn phys_addr(&self) -> usize {
         self.pfn as usize * Consts::PAGE_SIZE
     }
+
     fn dram_mapping(&self, bridge: Bridge, dimms: u8) -> usize {
         let phys_addr = self.phys_addr();
         let single_dimm_shift = if dimms == 1 { 1 } else { 0 };
@@ -162,8 +165,8 @@ fn collect_pages_by_row(mmap: &mut MmapMut, pagemap: &mut PageMap, row_size: usi
     rows
 }
 
-fn init_rows(rows: [&[Page]; 3], patterns: [u64; 3]) {
-    for (row, pattern) in rows.iter().zip(patterns) {
+fn init_rows(rows: [&[Page]; 3]) {
+    for (row, pattern) in rows.iter().zip(STRIPE) {
         for page in *row {
             let ptr = page.ptr as *mut u64;
             for i in 0..Consts::PAGE_SIZE / size_of::<u64>() {
@@ -237,10 +240,14 @@ fn hammer_all_reachable_pages(
 
     let mut rng = rand::thread_rng();
     let mut total_flips = 0;
+    let mut no_of_rows_tested: u32 = 0;
+
     'main: for _ in 0..pages_by_row.len() {
+
         let above_row_index = rng.gen::<usize>() % (pages_by_row.len() - 2);
         let target_row_index = above_row_index + 1;
         let below_row_index = above_row_index + 2;
+
         let above_row = &pages_by_row[above_row_index];
         let target_row = &pages_by_row[target_row_index];
         let below_row = &pages_by_row[below_row_index];
@@ -258,49 +265,52 @@ fn hammer_all_reachable_pages(
         }
 
         println!(
-            "Preparing to hammer rows {above_row_index}-{below_row_index} (total rows: {}).",
-            pages_by_row.len(),
+            "Preparing to hammer rows {above_row_index}-{below_row_index} (total pages: {}).",
+            target_row.len(),
         );
 
-        let mut no_of_rows_tested = 0;
-        for above_row_page in above_row {
-            for below_row_page in below_row {
-                if above_row_page.dram_mapping(bridge, dimms)
-                    != below_row_page.dram_mapping(bridge, dimms)
-                {
-                    continue;
-                }
+        let rows = [&above_row[..], &target_row[..], &below_row[..]];
+        
+        println!("Initializing rows {above_row_index}-{below_row_index}...");
+        init_rows(rows);
 
-                println!("Initializing rows {above_row_index}-{below_row_index}...");
+        let before = Instant::now();
+        for (above_row_page, below_row_page) in above_row.into_iter().zip(below_row.into_iter()) {
 
-                no_of_rows_tested += 1;
-                let rows = [&above_row[..], &target_row[..], &below_row[..]];
-                // Set middle row to zeroes and adjacent rows to 0x00FF, repeating
-                init_rows(rows, STRIPE);
+            let above_row_mapping = above_row_page.dram_mapping(bridge, dimms);
+            let below_row_mapping = below_row_page.dram_mapping(bridge, dimms);
 
-                println!("Hammering rows {above_row_index}-{below_row_index}...");
-                // RELEASE THE BEAST
-                rowhammer(above_row_page.ptr, below_row_page.ptr);
-
-                // Now count the flips
-                let (flips, no_of_flips) = find_flips(rows[1]);
-                total_flips += no_of_flips;
-                if flips.is_empty() {
-                    println!("No flips found in row {target_row_index}.");
-                } else {
-                    println!("Found {no_of_flips} flips in row {target_row_index}:");
-                }
-                for (flipped_page, bit_indices) in flips {
-                    let pfn = get_page_frame_number(&mut pagemap, flipped_page.ptr as usize)?;
-                    println!("\tpfn: {pfn}\tflipped bits at: {:?}", bit_indices);
-                }
-
-                println!(
-                    "So far: {:.4} flips per row. {total_flips} flips total.\n",
-                    total_flips as f64 / no_of_rows_tested as f64,
-                );
+            if above_row_mapping != below_row_mapping 
+            {
+                println!("NOT VALID");
+                continue;
             }
+
+            println!("Hammering rows {above_row_index}-{below_row_index}...");
+            // RELEASE THE BEAST
+            rowhammer(above_row_page.ptr, below_row_page.ptr);
         }
+        println!("Hammering {target_row_index} took {:.2?} seconds", before.elapsed());
+        no_of_rows_tested += 1;
+
+        // Count the flips in the row after hammering it
+        let (flips, no_of_flips) = find_flips(&target_row[..]);
+        total_flips += no_of_flips;
+        if flips.is_empty() {
+            println!("No flips found in row {target_row_index}.");
+        } else {
+            println!("Found {no_of_flips} flips in row {target_row_index}:");
+        }
+
+        for (flipped_page, bit_indices) in flips {
+            let pfn = get_page_frame_number(&mut pagemap, flipped_page.ptr as usize)?;
+            println!("\tpfn: {pfn}\tflipped bits at: {:?}", bit_indices);
+        }
+
+        println!(
+            "So far: {:.4} flips per row. {total_flips} flips total.\n",
+            total_flips as f64 / no_of_rows_tested as f64,
+        );      
     }
     Ok(())
 }
@@ -354,7 +364,7 @@ mod tests {
                     }
                 }
             }
-            init_rows(rows, STRIPE);
+            init_rows(rows);
             for (row, pattern) in rows.iter().zip(STRIPE) {
                 for page in *row {
                     let ptr = page.ptr as *mut u64;
