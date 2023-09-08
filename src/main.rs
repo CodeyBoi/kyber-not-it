@@ -1,6 +1,6 @@
 mod profiler;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 struct Cli {
@@ -25,21 +25,30 @@ struct ProfilerArgs {
     /// How many ram sticks on the target machine
     #[arg(long, short, default_value_t = 2)]
     dimms: u8,
+    /// Which northbridge your CPU has (affects the DRAM mapping)
+    #[arg(long, short, value_enum, default_value = "haswell")]
+    bridge: Bridge,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum Bridge {
+    Haswell,
+    Sandy,
 }
 
 fn main() {
     let cli = Cli::parse();
     match cli.command {
         None => println!("Running main program"),
-        Some(command) => {
-            match command {
-                Command::Profile(args) => {
-                    profiler::rowhammer::main(
-                        args.fraction_of_phys_memory,
-                        args.cores,
-                        args.dimms,
-                    );
-                },
+        Some(command) => match command {
+            Command::Profile(args) => {
+                println!("{:?}", args);
+                profiler::rowhammer::main(
+                    args.fraction_of_phys_memory,
+                    args.cores,
+                    args.dimms,
+                    args.bridge,
+                );
             }
         },
     }

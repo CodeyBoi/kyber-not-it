@@ -10,7 +10,10 @@ use procfs::{
 };
 use rand::Rng;
 
-use crate::profiler::utils::{get_page_frame_number, setup_mapping, Consts};
+use crate::{
+    profiler::utils::{get_page_frame_number, setup_mapping, Consts},
+    Bridge,
+};
 
 const NO_OF_READS: u64 = 27 * 100 * 1000 * 4;
 const STRIPE: [u64; 3] = [0x00FF00FF00FF00FF, 0, 0x00FF00FF00FF00FF];
@@ -110,7 +113,12 @@ fn find_flips(row: &[*mut u8]) -> (Vec<(*mut u8, Vec<usize>)>, u64) {
     (flips, no_of_flips)
 }
 
-fn hammer_all_reachable_pages(mmap: &mut MmapMut, cores: u8, dimms: u8) -> ProcResult<()> {
+fn hammer_all_reachable_pages(
+    mmap: &mut MmapMut,
+    cores: u8,
+    dimms: u8,
+    bridge: Bridge,
+) -> ProcResult<()> {
     let mut pagemap = Process::myself()?.pagemap()?;
     let row_size = 128 * 1024 * dimms as usize;
 
@@ -179,10 +187,10 @@ fn hammer_all_reachable_pages(mmap: &mut MmapMut, cores: u8, dimms: u8) -> ProcR
     Ok(())
 }
 
-pub(crate) fn main(fraction_of_phys_memory: f64, cores: u8, dimms: u8) {
+pub(crate) fn main(fraction_of_phys_memory: f64, cores: u8, dimms: u8, bridge: Bridge) {
     println!("Setting up memory map...");
     let mut mmap = setup_mapping(fraction_of_phys_memory);
-    hammer_all_reachable_pages(&mut mmap, cores, dimms).unwrap();
+    hammer_all_reachable_pages(&mut mmap, cores, dimms, bridge).unwrap();
 }
 
 #[cfg(test)]
