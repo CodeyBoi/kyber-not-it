@@ -42,7 +42,6 @@ fn main() {
         None => println!("Running main program"),
         Some(command) => match command {
             Command::Profile(args) => {
-                println!("{:?}", args);
                 profiler::rowhammer::main(
                     args.fraction_of_phys_memory,
                     args.cores,
