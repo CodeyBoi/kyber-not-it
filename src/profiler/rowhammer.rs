@@ -266,46 +266,46 @@ fn hammer_all_reachable_pages(
         }
 
         let rows = [&above_row[..], &target_row[..], &below_row[..]];
-        println!("Initializing rows {above_row_index}-{below_row_index}...");
         init_rows(rows);
 
         let before = Instant::now();
         for (above_row_page, below_row_page) in above_row.into_iter().zip(below_row.into_iter()) {
+            // Filter out pages which are not in the same column
             let above_row_mapping = above_row_page.dram_mapping(bridge, dimms);
             let below_row_mapping = below_row_page.dram_mapping(bridge, dimms);
-
             if above_row_mapping != below_row_mapping {
                 continue;
             }
 
-            println!("Hammering rows {above_row_index}-{below_row_index}...");
             // RELEASE THE BEAST
+            println!("Hammering rows {above_row_index}-{below_row_index}...");
             rowhammer(above_row_page.ptr, below_row_page.ptr);
-        }
-        println!(
-            "Hammering row {target_row_index} took {:.2?} seconds",
-            before.elapsed()
-        );
-        no_of_rows_tested += 1;
 
-        // Count the flips in the row after hammering it
-        let (flips, no_of_flips) = find_flips(&target_row[..]);
-        total_flips += no_of_flips;
-        if flips.is_empty() {
-            println!("No flips found in row {target_row_index}.");
-        } else {
-            println!("Found {no_of_flips} flips in row {target_row_index}:");
-        }
+            println!(
+                "Hammering row {target_row_index} took {:.2?} seconds",
+                before.elapsed()
+            );
 
-        for (flipped_page, bit_indices) in flips {
-            let pfn = get_page_frame_number(&mut pagemap, flipped_page.ptr as usize)?;
-            println!("\tpfn: {pfn}\tflipped bits at: {:?}", bit_indices);
-        }
+            // Count the flips in the row after hammering it
+            let (flips, no_of_flips) = find_flips(&target_row[..]);
+            total_flips += no_of_flips;
+            if flips.is_empty() {
+                println!("No flips found in row {target_row_index}.");
+            } else {
+                println!("Found {no_of_flips} flips in row {target_row_index}:");
+            }
 
-        println!(
-            "So far: {:.4} flips per row ({no_of_rows_tested} rows tested, {total_flips} flips total)\n",
-            total_flips as f64 / no_of_rows_tested as f64,
-        );
+            for (flipped_page, bit_indices) in flips {
+                let pfn = get_page_frame_number(&mut pagemap, flipped_page.ptr as usize)?;
+                println!("\tpfn: {pfn}\tflipped bits at: {:?}", bit_indices);
+            }
+
+            no_of_rows_tested += 1;
+            println!(
+                "So far: {:.4} flips per row ({no_of_rows_tested} rows tested, {total_flips} flips total)\n",
+                total_flips as f64 / no_of_rows_tested as f64,
+            );
+        }
     }
     Ok(())
 }
