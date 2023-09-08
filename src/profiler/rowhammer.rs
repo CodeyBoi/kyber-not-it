@@ -5,7 +5,7 @@ use std::{
     arch::x86_64::_mm_clflush,
     mem::size_of,
     ops::{Range, RangeFull},
-    time::Instant
+    time::Instant,
 };
 
 use memmap2::MmapMut;
@@ -59,7 +59,7 @@ fn rowhammer(above_page: *mut u8, below_page: *mut u8) -> u64 {
     sum
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Row {
     pages: Vec<Page>,
     pub(crate) presumed_index: usize,
@@ -101,21 +101,22 @@ impl std::ops::Index<RangeFull> for Row {
     }
 }
 
-impl Iterator for Row {
-    type Item = Page;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.pages.iter().next().map(|page| *page)
-    }
-}
+// impl Iterator for Row {
+//     type Item = Page;
+//     fn next(&mut self) -> Option<Self::Item> {
+//         self.pages.iter().next().map(|page| *page)
+//     }
+// }
 
-impl<'a> Iterator for &'a Row {
+impl<'a> IntoIterator for &'a Row {
     type Item = &'a Page;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.pages.iter().next()
+    type IntoIter = std::slice::Iter<'a, Page>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.pages.iter()
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct Page {
     pub(crate) ptr: *mut u8,
     pub(crate) pfn: u64,
@@ -147,17 +148,20 @@ impl Page {
 
 fn collect_pages_by_row(mmap: &mut MmapMut, pagemap: &mut PageMap, row_size: usize) -> Vec<Row> {
     let base_ptr = mmap.as_mut_ptr();
-    let mut rows: Vec<Row> = (0..mmap.len() / Consts::PAGE_SIZE)
-        .map(|i| Row::new(i))
-        .collect();
-    // let mut pages_by_row = vec![Vec::new(); mmap.len() / Consts::PAGE_SIZE];
-    for i in 0..rows.len() {
-        let offset = i * Consts::PAGE_SIZE;
+    let mut rows = Vec::new();
+    for offset in (0..mmap.len()).step_by(Consts::PAGE_SIZE) {
         unsafe {
             let virtual_addr = base_ptr.add(offset);
             if let Ok(pfn) = get_page_frame_number(pagemap, virtual_addr as usize) {
                 let physical_addr = pfn as usize * Consts::PAGE_SIZE;
                 let presumed_row_index = physical_addr as usize / row_size;
+                // If the row index is larger than the number of rows, we
+                // push new rows until we have enough.
+                if presumed_row_index >= rows.len() {
+                    for i in rows.len()..presumed_row_index + 1 {
+                        rows.push(Row::new(i));
+                    }
+                }
                 rows[presumed_row_index].push(Page::new(virtual_addr, pfn));
             }
         }
@@ -236,15 +240,12 @@ fn hammer_all_reachable_pages(
     println!("Collecting all pages in all rows...");
     let pages_by_row = collect_pages_by_row(mmap, &mut pagemap, row_size);
 
-    println!("Starting profiling...");
-
-    let mut rng = rand::thread_rng();
+    // let mut rng = rand::thread_rng();
     let mut total_flips = 0;
     let mut no_of_rows_tested: u32 = 0;
 
-    'main: for _ in 0..pages_by_row.len() {
-
-        let above_row_index = rng.gen::<usize>() % (pages_by_row.len() - 2);
+    'main: for above_row_index in 0..pages_by_row.len() - 2 {
+        // let above_row_index = rng.gen::<usize>() % (pages_by_row.len() - 2);
         let target_row_index = above_row_index + 1;
         let below_row_index = above_row_index + 2;
 
@@ -264,25 +265,16 @@ fn hammer_all_reachable_pages(
             }
         }
 
-        println!(
-            "Preparing to hammer rows {above_row_index}-{below_row_index} (total pages: {}).",
-            target_row.len(),
-        );
-
         let rows = [&above_row[..], &target_row[..], &below_row[..]];
-        
         println!("Initializing rows {above_row_index}-{below_row_index}...");
         init_rows(rows);
 
         let before = Instant::now();
         for (above_row_page, below_row_page) in above_row.into_iter().zip(below_row.into_iter()) {
-
             let above_row_mapping = above_row_page.dram_mapping(bridge, dimms);
             let below_row_mapping = below_row_page.dram_mapping(bridge, dimms);
 
-            if above_row_mapping != below_row_mapping 
-            {
-                println!("NOT VALID");
+            if above_row_mapping != below_row_mapping {
                 continue;
             }
 
@@ -290,7 +282,10 @@ fn hammer_all_reachable_pages(
             // RELEASE THE BEAST
             rowhammer(above_row_page.ptr, below_row_page.ptr);
         }
-        println!("Hammering {target_row_index} took {:.2?} seconds", before.elapsed());
+        println!(
+            "Hammering row {target_row_index} took {:.2?} seconds",
+            before.elapsed()
+        );
         no_of_rows_tested += 1;
 
         // Count the flips in the row after hammering it
@@ -308,9 +303,9 @@ fn hammer_all_reachable_pages(
         }
 
         println!(
-            "So far: {:.4} flips per row. {total_flips} flips total.\n",
+            "So far: {:.4} flips per row ({no_of_rows_tested} rows tested, {total_flips} flips total)\n",
             total_flips as f64 / no_of_rows_tested as f64,
-        );      
+        );
     }
     Ok(())
 }
