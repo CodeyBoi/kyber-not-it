@@ -1,4 +1,5 @@
 mod profiler;
+mod tui;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
@@ -39,7 +40,9 @@ enum Bridge {
 fn main() {
     let cli = Cli::parse();
     match cli.command {
-        None => println!("Running main program"),
+        None => {
+            tui::main().unwrap();
+        }
         Some(command) => match command {
             Command::Profile(args) => {
                 profiler::rowhammer::main(
