@@ -13,7 +13,6 @@ use procfs::{
     process::{PageMap, Process},
     ProcResult,
 };
-use rand::Rng;
 
 use crate::{
     profiler::utils::{get_page_frame_number, setup_mapping, Consts},
@@ -329,9 +328,7 @@ mod tests {
         let mut pagemap = Process::myself()?.pagemap()?;
         let pages_by_row = collect_pages_by_row(&mut mmap, &mut pagemap, row_size);
 
-        let mut rng = rand::thread_rng();
-        'main: for _ in 0..pages_by_row.len() - 2 {
-            let row = rng.gen::<usize>() % (pages_by_row.len() - 2);
+        'main: for row in 0..pages_by_row.len() - 2 {
             let target_row = row + 1;
             for i in 0..3 {
                 if pages_by_row[row + i].len() != row_size as usize / Consts::PAGE_SIZE {

@@ -1,7 +1,7 @@
-use nix::libc::__u32;
-use procfs::process::{Process, PageInfo};
-use strum::EnumCount;
-use strum_macros::EnumCount as EnumCountMacro;
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
+use procfs::process::Process;
 
 use crate::profiler::utils::{self, Consts};
 
@@ -36,8 +36,10 @@ pub(crate) fn some_stuff(virtual_address: u8) -> u64 {
     println!("Maps: {:#?}", maps);
 
     for m in maps.memory_maps {
-        if let Ok(page_frame_number) = utils::get_page_frame_number(&mut pmap, m.address.0 as usize) {
-            let phys_addr = utils::get_phys_addr(&mut pmap, m.address.0 as usize).expect("Couldnt get phys address");
+        if let Ok(page_frame_number) = utils::get_page_frame_number(&mut pmap, m.address.0 as usize)
+        {
+            let phys_addr = utils::get_phys_addr(&mut pmap, m.address.0 as usize)
+                .expect("Couldnt get phys address");
             println!(" PFN: {}\tPHYS: {}", page_frame_number, phys_addr);
         } else {
             println!("Found nothing for {}", m.address.0);
@@ -49,4 +51,3 @@ pub(crate) fn some_stuff(virtual_address: u8) -> u64 {
 
     virtual_address as u64
 }
-
