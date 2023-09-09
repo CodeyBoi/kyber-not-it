@@ -40,9 +40,7 @@ enum Bridge {
 fn main() {
     let cli = Cli::parse();
     match cli.command {
-        None => {
-            tui::main().unwrap();
-        }
+        None => tui::select_command(),
         Some(command) => match command {
             Command::Profile(args) => {
                 profiler::rowhammer::main(
