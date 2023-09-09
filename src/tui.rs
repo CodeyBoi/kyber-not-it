@@ -1,4 +1,10 @@
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    thread,
+    time::Duration,
+};
+
+use rand::Rng;
 
 use crate::{profiler, Bridge};
 
@@ -33,7 +39,17 @@ pub(crate) fn select_command() {
                 break;
             }
             "2" => {
-                println!("Attacking... >:)");
+                let mut rng = rand::thread_rng();
+                let mut progress = 0;
+                while progress < 100 {
+                    print!("\rRunning attack ({}%)", progress);
+                    stdout.flush().unwrap();
+                    let sleep = rng.gen_range(0..50);
+                    thread::sleep(Duration::from_millis(sleep));
+                    progress += rng.gen_range(0..=2);
+                }
+                println!("\rRunning attack (done!)");
+                println!("\n*** CRACKED KYBER! MASTER THESIS COMPLETE! ***\n");
                 break;
             }
             "3" => {
