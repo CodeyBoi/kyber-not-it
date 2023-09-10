@@ -151,7 +151,7 @@ fn collect_pages_by_row(mmap: &mut MmapMut, pagemap: &mut PageMap, row_size: usi
     for offset in (0..mmap.len()).step_by(Consts::PAGE_SIZE) {
         unsafe {
             let virtual_addr = base_ptr.add(offset);
-            if let Ok(pfn) = get_page_frame_number(pagemap, virtual_addr as usize) {
+            if let Ok(pfn) = get_page_frame_number(pagemap, virtual_addr) {
                 let physical_addr = pfn as usize * Consts::PAGE_SIZE;
                 let presumed_row_index = physical_addr as usize / row_size;
                 // If the row index is larger than the number of rows, we
@@ -295,7 +295,7 @@ fn hammer_all_reachable_pages(
             }
 
             for (flipped_page, bit_indices) in flips {
-                let pfn = get_page_frame_number(&mut pagemap, flipped_page.ptr as usize)?;
+                let pfn = get_page_frame_number(&mut pagemap, flipped_page.ptr)?;
                 println!("\tpfn: {pfn}\tflipped bits at: {:?}", bit_indices);
             }
 

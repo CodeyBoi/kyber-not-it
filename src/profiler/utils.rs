@@ -1,9 +1,12 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use procfs::{process::{PageInfo, PageMap}, ProcResult};
-use sysinfo::{System, SystemExt};
 use memmap2::{MmapMut, MmapOptions};
+use procfs::{
+    process::{PageInfo, PageMap},
+    ProcResult,
+};
+use sysinfo::{System, SystemExt};
 
 pub(crate) struct Consts;
 impl Consts {
@@ -16,7 +19,7 @@ pub(crate) fn get_phys_memory_size() -> u64 {
     sys.total_memory()
 }
 
-unsafe fn fill_memory (victim_va: *mut u8, above_va: *mut u8, below_va: *mut u8) {
+unsafe fn fill_memory(victim_va: *mut u8, above_va: *mut u8, below_va: *mut u8) {
     unsafe {
         std::ptr::write_bytes(victim_va, 0x00, Consts::PAGE_SIZE);
     }
@@ -25,11 +28,10 @@ unsafe fn fill_memory (victim_va: *mut u8, above_va: *mut u8, below_va: *mut u8)
     let upper_bits: u8 = 0x01;
 
     for index in 0..Consts::PAGE_SIZE {
-
         unsafe {
             let above_byte = above_va.add(index);
             let below_byte = below_va.add(index);
-            
+
             if index % 2 == 0 {
                 // Set the bytes at aboveVA and belowVA to lowerBits
                 *above_byte = lower_bits;
@@ -61,19 +63,21 @@ pub(crate) fn setup_mapping(fraction_of_phys_memory: f64) -> MmapMut {
     mmap
 }
 
-pub(crate) fn get_page_frame_number(pagemap: &mut PageMap, virtual_addr: usize) -> ProcResult<u64> {
-    match pagemap.get_info(virtual_addr / Consts::PAGE_SIZE as usize)? {
+pub(crate) fn get_page_frame_number(
+    pagemap: &mut PageMap,
+    virtual_addr: *const u8,
+) -> ProcResult<u64> {
+    match pagemap.get_info(virtual_addr as usize / Consts::PAGE_SIZE)? {
         PageInfo::MemoryPage(mempage) => {
             //println!("FLAGS: {:#?}", mempage);
             Ok(mempage.get_page_frame_number().0)
-        },
+        }
         PageInfo::SwapPage(_) => unimplemented!("Swap pages are not implemented"),
     }
 }
 
-
-pub(crate) fn get_phys_addr(pagemap: &mut PageMap, virtual_addr: usize) -> ProcResult<u64> {
+pub(crate) fn get_phys_addr(pagemap: &mut PageMap, virtual_addr: *const u8) -> ProcResult<u64> {
     let pfn = get_page_frame_number(pagemap, virtual_addr)?;
     // Physical address of frame is page_frame_number * page_size + offset
-    Ok((pfn * Consts::PAGE_SIZE as u64) | (virtual_addr & (0x1000 - 1)) as u64)
+    Ok((pfn * Consts::PAGE_SIZE as u64) | (virtual_addr as usize & (0x1000 - 1)) as u64)
 }

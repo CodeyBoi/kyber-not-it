@@ -36,9 +36,10 @@ pub(crate) fn some_stuff(virtual_address: u8) -> u64 {
     println!("Maps: {:#?}", maps);
 
     for m in maps.memory_maps {
-        if let Ok(page_frame_number) = utils::get_page_frame_number(&mut pmap, m.address.0 as usize)
+        if let Ok(page_frame_number) =
+            utils::get_page_frame_number(&mut pmap, m.address.0 as *const u8)
         {
-            let phys_addr = utils::get_phys_addr(&mut pmap, m.address.0 as usize)
+            let phys_addr = utils::get_phys_addr(&mut pmap, m.address.0 as *const u8)
                 .expect("Couldnt get phys address");
             println!(" PFN: {}\tPHYS: {}", page_frame_number, phys_addr);
         } else {
