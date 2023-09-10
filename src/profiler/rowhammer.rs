@@ -74,17 +74,17 @@ impl<'a> IntoIterator for &'a Row {
 
 #[derive(Clone, Copy, Debug)]
 struct Page {
-    pub(crate) ptr: *mut u8,
+    pub(crate) virt_addr: *mut u8,
     pub(crate) pfn: u64,
 }
 
 impl Page {
-    fn new(ptr: *mut u8, pfn: u64) -> Self {
-        Self { ptr, pfn }
+    fn new(virt_addr: *mut u8, pfn: u64) -> Self {
+        Self { virt_addr, pfn }
     }
 
-    fn phys_addr(&self) -> usize {
-        self.pfn as usize * Consts::PAGE_SIZE
+    fn phys_addr(&self) -> *mut u8 {
+        (self.pfn as usize * Consts::PAGE_SIZE) as *mut u8
     }
 
     fn dram_mapping(&self, bridge: Bridge, dimms: u8) -> usize {
@@ -97,15 +97,15 @@ impl Page {
             hashes.to_vec()
         };
 
-        let mut out = 0;
+        let mut out: usize = 0;
         for hash in hashes.iter().rev() {
-            let mut tmp = 0;
+            let mut tmp: usize = 0;
             for h in hash {
-                tmp ^= (phys_addr >> (h - single_dimm_shift)) & 1;
+                tmp ^= (phys_addr as usize >> (h - single_dimm_shift)) & 1;
             }
             out = (out << 1) | tmp;
         }
-        out as usize
+        out
     }
 }
 
@@ -130,20 +130,17 @@ fn get_hashes(bridge: Bridge) -> [Vec<u8>; 6] {
     }
 }
 
-fn rowhammer(above_page: *mut u8, below_page: *mut u8) -> u64 {
-    let mut sum = 0;
+fn rowhammer(above_page: *mut u8, below_page: *mut u8) {
     let above_page64 = above_page as *mut u64;
     let below_page64 = below_page as *mut u64;
     for _ in 0..NO_OF_READS {
         unsafe {
-            // To avoid the compiler optimizing out the loop we sum the read (it might or might not do this)
             _mm_clflush(above_page);
-            sum += above_page64.read_volatile() as u64;
+            above_page64.read_volatile();
             _mm_clflush(below_page);
-            sum += below_page64.read_volatile() as u64;
+            below_page64.read_volatile();
         }
     }
-    sum
 }
 
 fn collect_pages_by_row(mmap: &mut MmapMut, pagemap: &mut PageMap, row_size: usize) -> Vec<Row> {
@@ -172,11 +169,11 @@ fn collect_pages_by_row(mmap: &mut MmapMut, pagemap: &mut PageMap, row_size: usi
 fn init_rows(rows: [&[Page]; 3]) {
     for (row, pattern) in rows.iter().zip(STRIPE) {
         for page in *row {
-            let ptr = page.ptr as *mut u64;
+            let ptr = page.virt_addr as *mut u64;
             for i in 0..Consts::PAGE_SIZE / size_of::<u64>() {
                 unsafe {
                     *ptr.add(i) = pattern;
-                    _mm_clflush(page.ptr);
+                    _mm_clflush(page.virt_addr);
                 }
             }
         }
@@ -211,8 +208,8 @@ fn find_flips(row: &[Page]) -> (Vec<(Page, Vec<usize>)>, u64) {
         let mut flipped_indexes = Vec::new();
         for i in 0..Consts::PAGE_SIZE {
             unsafe {
-                _mm_clflush(page.ptr);
-                let byte = *(page.ptr).add(i);
+                _mm_clflush(page.virt_addr);
+                let byte = *(page.virt_addr).add(i);
                 if byte != 0 {
                     for bit_index in index_of_set_bits(byte) {
                         flipped_indexes.push(i * 8 + bit_index);
@@ -234,11 +231,11 @@ fn hammer_all_reachable_pages(
     dimms: u8,
     bridge: Bridge,
 ) -> ProcResult<()> {
-    let mut pagemap = Process::myself()?.pagemap()?;
+    let pagemap = &mut Process::myself()?.pagemap()?;
     let row_size = 128 * 1024 * dimms as usize;
 
     println!("Collecting all pages in all rows...");
-    let pages_by_row = collect_pages_by_row(mmap, &mut pagemap, row_size);
+    let pages_by_row = collect_pages_by_row(mmap, pagemap, row_size);
 
     // let mut rng = rand::thread_rng();
     let mut total_flips = 0;
@@ -291,7 +288,7 @@ fn hammer_all_reachable_pages(
 
             // RELEASE THE BEAST
             println!("Hammering rows {above_row_index}-{below_row_index}...");
-            rowhammer(above_row_page.ptr, below_row_page.ptr);
+            rowhammer(above_row_page.virt_addr, below_row_page.virt_addr);
 
             println!(
                 "Hammering row {target_row_index} took {:.2?} seconds",
@@ -308,7 +305,7 @@ fn hammer_all_reachable_pages(
             }
 
             for (flipped_page, bit_indices) in flips {
-                let pfn = get_page_frame_number(&mut pagemap, flipped_page.ptr)?;
+                let pfn = get_page_frame_number(pagemap, flipped_page.virt_addr)?;
                 println!("\tpfn: {pfn}\tflipped bits at: {:?}", bit_indices);
             }
 
@@ -361,7 +358,7 @@ mod tests {
             ];
             for row in &rows {
                 for page in *row {
-                    let ptr = page.ptr as *mut u64;
+                    let ptr = page.virt_addr as *mut u64;
                     for i in 0..row_size / size_of::<u64>() {
                         unsafe {
                             assert_eq!(*ptr.add(i), 0);
@@ -372,7 +369,7 @@ mod tests {
             init_rows(rows);
             for (row, pattern) in rows.iter().zip(STRIPE) {
                 for page in *row {
-                    let ptr = page.ptr as *mut u64;
+                    let ptr = page.virt_addr as *mut u64;
                     for i in 0..row_size / size_of::<u64>() {
                         unsafe {
                             assert_eq!(*ptr.add(i), pattern);
