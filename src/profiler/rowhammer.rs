@@ -22,42 +22,6 @@ use crate::{
 const NO_OF_READS: u64 = 27 * 100 * 1000 * 4;
 const STRIPE: [u64; 3] = [0x00FF00FF00FF00FF, 0, 0x00FF00FF00FF00FF];
 
-fn get_hashes(bridge: Bridge) -> [Vec<u8>; 6] {
-    match bridge {
-        Bridge::Haswell => [
-            vec![14, 18],
-            vec![15, 19],
-            vec![16, 20],
-            vec![17, 21],
-            vec![17, 21],
-            vec![7, 8, 9, 12, 13, 18, 19],
-        ],
-        Bridge::Sandy => [
-            vec![14, 18],
-            vec![15, 19],
-            vec![16, 20],
-            vec![17, 21],
-            vec![17, 21],
-            vec![6],
-        ],
-    }
-}
-
-fn rowhammer(above_page: *mut u8, below_page: *mut u8) -> u64 {
-    // let t0 = rdtsc();
-    let mut sum = 0;
-    for _ in 0..NO_OF_READS {
-        for ptr in [above_page, below_page] {
-            unsafe {
-                // To avoid the compiler optimizing out the loop (it might or might not do this)
-                sum += ptr.read_volatile() as u64;
-                _mm_clflush(ptr);
-            }
-        }
-    }
-    sum
-}
-
 #[derive(Clone, Debug)]
 struct Row {
     pages: Vec<Page>,
@@ -100,13 +64,6 @@ impl std::ops::Index<RangeFull> for Row {
     }
 }
 
-// impl Iterator for Row {
-//     type Item = Page;
-//     fn next(&mut self) -> Option<Self::Item> {
-//         self.pages.iter().next().map(|page| *page)
-//     }
-// }
-
 impl<'a> IntoIterator for &'a Row {
     type Item = &'a Page;
     type IntoIter = std::slice::Iter<'a, Page>;
@@ -133,8 +90,15 @@ impl Page {
     fn dram_mapping(&self, bridge: Bridge, dimms: u8) -> usize {
         let phys_addr = self.phys_addr();
         let single_dimm_shift = if dimms == 1 { 1 } else { 0 };
+        let hashes = get_hashes(bridge);
+        let hashes = if dimms == 1 {
+            hashes[..5].to_vec()
+        } else {
+            hashes.to_vec()
+        };
+
         let mut out = 0;
-        for hash in get_hashes(bridge) {
+        for hash in hashes.iter().rev() {
             let mut tmp = 0;
             for h in hash {
                 tmp ^= (phys_addr >> (h - single_dimm_shift)) & 1;
@@ -143,6 +107,43 @@ impl Page {
         }
         out as usize
     }
+}
+
+fn get_hashes(bridge: Bridge) -> [Vec<u8>; 6] {
+    match bridge {
+        Bridge::Haswell => [
+            vec![14, 18],
+            vec![15, 19],
+            vec![16, 20],
+            vec![17, 21],
+            vec![17, 21],
+            vec![7, 8, 9, 12, 13, 18, 19],
+        ],
+        Bridge::Sandy => [
+            vec![14, 18],
+            vec![15, 19],
+            vec![16, 20],
+            vec![17, 21],
+            vec![17, 21],
+            vec![6],
+        ],
+    }
+}
+
+fn rowhammer(above_page: *mut u8, below_page: *mut u8) -> u64 {
+    let mut sum = 0;
+    let above_page64 = above_page as *mut u64;
+    let below_page64 = below_page as *mut u64;
+    for _ in 0..NO_OF_READS {
+        unsafe {
+            // To avoid the compiler optimizing out the loop we sum the read (it might or might not do this)
+            _mm_clflush(above_page);
+            sum += above_page64.read_volatile() as u64;
+            _mm_clflush(below_page);
+            sum += below_page64.read_volatile() as u64;
+        }
+    }
+    sum
 }
 
 fn collect_pages_by_row(mmap: &mut MmapMut, pagemap: &mut PageMap, row_size: usize) -> Vec<Row> {
@@ -243,6 +244,14 @@ fn hammer_all_reachable_pages(
     let mut total_flips = 0;
     let mut no_of_rows_tested: u32 = 0;
 
+    if pages_by_row.len() < 3 {
+        eprintln!(
+            "[!] Can't hammer rows - only got {} rows total. Are you running as sudo?",
+            pages_by_row.len()
+        );
+        return Ok(());
+    }
+
     'main: for above_row_index in 0..pages_by_row.len() - 2 {
         // let above_row_index = rng.gen::<usize>() % (pages_by_row.len() - 2);
         let target_row_index = above_row_index + 1;
@@ -273,6 +282,10 @@ fn hammer_all_reachable_pages(
             let above_row_mapping = above_row_page.dram_mapping(bridge, dimms);
             let below_row_mapping = below_row_page.dram_mapping(bridge, dimms);
             if above_row_mapping != below_row_mapping {
+                eprintln!(
+                    "Mapping mismatch: {:#x} != {:#x}",
+                    above_row_mapping, below_row_mapping
+                );
                 continue;
             }
 
