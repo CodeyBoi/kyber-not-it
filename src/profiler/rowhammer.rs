@@ -8,6 +8,7 @@ use procfs::{
     process::{PageMap, Process},
     ProcResult,
 };
+use rand::Rng;
 
 use crate::{
     profiler::utils::{get_page_frame_number, setup_mapping, Consts},
@@ -138,8 +139,9 @@ fn hammer_all_reachable_pages(
         return Ok(());
     }
 
+    let mut rng = rand::thread_rng();
     'main: for above_row_index in 0..pages_by_row.len() - 2 {
-        // let above_row_index = rng.gen::<usize>() % (pages_by_row.len() - 2);
+        let above_row_index = rng.gen::<usize>() % (pages_by_row.len() - 2);
         let target_row_index = above_row_index + 1;
         let below_row_index = above_row_index + 2;
 
@@ -168,10 +170,10 @@ fn hammer_all_reachable_pages(
             let above_row_mapping = above_row_page.dram_mapping(bridge, dimms);
             let below_row_mapping = below_row_page.dram_mapping(bridge, dimms);
             if above_row_mapping != below_row_mapping {
-                eprintln!(
-                    "Mapping mismatch: {:#x} != {:#x}",
-                    above_row_mapping, below_row_mapping
-                );
+                // eprintln!(
+                //     "Mapping mismatch: {:#x} != {:#x}",
+                //     above_row_mapping, below_row_mapping
+                // );
                 continue;
             }
 

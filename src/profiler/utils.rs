@@ -96,7 +96,7 @@ impl Page {
         };
 
         let mut out: usize = 0;
-        for hash in hashes.iter().rev() {
+        for hash in hashes {
             let mut tmp: usize = 0;
             for h in hash {
                 tmp ^= (phys_addr as usize >> (h - single_dimm_shift)) & 1;
@@ -107,17 +107,30 @@ impl Page {
     }
 }
 
-pub(crate) fn get_hashes(bridge: Bridge) -> [Vec<u8>; 6] {
+pub(crate) fn get_hashes(bridge: Bridge) -> Vec<Vec<u8>> {
     match bridge {
-        Bridge::Haswell => [
+        Bridge::Haswell => vec![
+            vec![6],
             vec![14, 18],
             vec![15, 19],
             vec![16, 20],
             vec![17, 21],
-            vec![17, 21],
-            vec![7, 8, 9, 12, 13, 18, 19],
+            vec![8, 11, 13, 15],
+            vec![16, 23, 25, 30],
+            vec![7, 9, 11, 12, 14],
+            vec![7, 9, 13, 22, 24],
+            vec![10, 12, 15, 23, 27],
+            vec![14, 15, 22, 26, 28],
+            vec![15, 17, 22, 25, 29],
+            vec![9, 11, 23, 28, 29],
+            vec![9, 15, 26, 27, 30],
+            // vec![14, 18],
+            // vec![15, 19],
+            // vec![16, 20],
+            // vec![17, 21],
+            // vec![7, 8, 9, 12, 13, 18, 19],
         ],
-        Bridge::Sandy => [
+        Bridge::Sandy => vec![
             vec![14, 18],
             vec![15, 19],
             vec![16, 20],
@@ -128,7 +141,22 @@ pub(crate) fn get_hashes(bridge: Bridge) -> [Vec<u8>; 6] {
     }
 }
 
-pub(crate) fn get_block_by_order(order: usize) {}
+pub(crate) fn get_block_by_order(order: u32) -> MmapMut {
+    let mem_size = Consts::PAGE_SIZE * 2_usize.pow(order);
+    let mut mmap = MmapOptions::new()
+        .len(mem_size)
+        .populate()
+        .map_anon()
+        .expect("Failed to setup memory map over block");
+
+    let ptr = mmap.as_mut_ptr();
+    for offset in (0..mmap.len()).step_by(Consts::PAGE_SIZE) {
+        unsafe {
+            *ptr.add(offset) = 1 + offset as u8;
+        }
+    }
+    mmap
+}
 
 pub(crate) fn get_phys_memory_size() -> u64 {
     let sys = System::new_all();
@@ -188,7 +216,7 @@ pub(crate) fn get_page_frame_number(
             //println!("FLAGS: {:#?}", mempage);
             Ok(mempage.get_page_frame_number().0)
         }
-        PageInfo::SwapPage(_) => unimplemented!("Swap pages are not implemented"),
+        PageInfo::SwapPage(_) => Err(procfs::ProcError::NotFound(None)),
     }
 }
 
