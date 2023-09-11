@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+use std::ops::{Range, RangeFull};
+
 use memmap2::{MmapMut, MmapOptions};
 use procfs::{
     process::{PageInfo, PageMap},
@@ -8,18 +10,132 @@ use procfs::{
 };
 use sysinfo::{System, SystemExt};
 
+use crate::Bridge;
+
 pub(crate) struct Consts;
 impl Consts {
     pub(crate) const MAX_BITS: usize = 16;
     pub(crate) const PAGE_SIZE: usize = 0x1000;
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct Row {
+    pages: Vec<Page>,
+    pub(crate) presumed_index: usize,
+}
+
+impl Row {
+    pub(crate) fn new(presumed_index: usize) -> Self {
+        Self {
+            pages: Vec::new(),
+            presumed_index,
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.pages.len()
+    }
+
+    pub(crate) fn push(&mut self, page: Page) {
+        self.pages.push(page);
+    }
+}
+
+impl std::ops::Index<usize> for Row {
+    type Output = Page;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.pages[index]
+    }
+}
+
+impl std::ops::Index<Range<usize>> for Row {
+    type Output = [Page];
+    fn index(&self, index: Range<usize>) -> &Self::Output {
+        &self.pages[index.start..index.end]
+    }
+}
+
+impl std::ops::Index<RangeFull> for Row {
+    type Output = [Page];
+    fn index(&self, _: RangeFull) -> &Self::Output {
+        &self.pages[..]
+    }
+}
+
+impl<'a> IntoIterator for &'a Row {
+    type Item = &'a Page;
+    type IntoIter = std::slice::Iter<'a, Page>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.pages.iter()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Page {
+    pub(crate) virt_addr: *mut u8,
+    pub(crate) pfn: u64,
+}
+
+impl Page {
+    pub(crate) fn new(virt_addr: *mut u8, pfn: u64) -> Self {
+        Self { virt_addr, pfn }
+    }
+
+    pub(crate) fn phys_addr(&self) -> *mut u8 {
+        (self.pfn as usize * Consts::PAGE_SIZE) as *mut u8
+    }
+
+    pub(crate) fn dram_mapping(&self, bridge: Bridge, dimms: u8) -> usize {
+        let phys_addr = self.phys_addr();
+        let single_dimm_shift = if dimms == 1 { 1 } else { 0 };
+        let hashes = get_hashes(bridge);
+        let hashes = if dimms == 1 {
+            hashes[..5].to_vec()
+        } else {
+            hashes.to_vec()
+        };
+
+        let mut out: usize = 0;
+        for hash in hashes.iter().rev() {
+            let mut tmp: usize = 0;
+            for h in hash {
+                tmp ^= (phys_addr as usize >> (h - single_dimm_shift)) & 1;
+            }
+            out = (out << 1) | tmp;
+        }
+        out
+    }
+}
+
+pub(crate) fn get_hashes(bridge: Bridge) -> [Vec<u8>; 6] {
+    match bridge {
+        Bridge::Haswell => [
+            vec![14, 18],
+            vec![15, 19],
+            vec![16, 20],
+            vec![17, 21],
+            vec![17, 21],
+            vec![7, 8, 9, 12, 13, 18, 19],
+        ],
+        Bridge::Sandy => [
+            vec![14, 18],
+            vec![15, 19],
+            vec![16, 20],
+            vec![17, 21],
+            vec![17, 21],
+            vec![6],
+        ],
+    }
+}
+
+pub(crate) fn get_block_by_order(order: usize) {}
+
 pub(crate) fn get_phys_memory_size() -> u64 {
     let sys = System::new_all();
     sys.total_memory()
 }
 
-unsafe fn fill_memory(victim_va: *mut u8, above_va: *mut u8, below_va: *mut u8) {
+pub(crate) unsafe fn fill_memory(victim_va: *mut u8, above_va: *mut u8, below_va: *mut u8) {
     unsafe {
         std::ptr::write_bytes(victim_va, 0x00, Consts::PAGE_SIZE);
     }

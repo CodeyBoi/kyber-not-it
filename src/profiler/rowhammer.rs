@@ -1,12 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{
-    arch::x86_64::_mm_clflush,
-    mem::size_of,
-    ops::{Range, RangeFull},
-    time::Instant,
-};
+use std::{arch::x86_64::_mm_clflush, mem::size_of, time::Instant};
 
 use memmap2::MmapMut;
 use procfs::{
@@ -19,116 +14,10 @@ use crate::{
     Bridge,
 };
 
+use super::utils::{Page, Row};
+
 const NO_OF_READS: u64 = 27 * 100 * 1000 * 4;
 const STRIPE: [u64; 3] = [0x00FF00FF00FF00FF, 0, 0x00FF00FF00FF00FF];
-
-#[derive(Clone, Debug)]
-struct Row {
-    pages: Vec<Page>,
-    pub(crate) presumed_index: usize,
-}
-
-impl Row {
-    fn new(presumed_index: usize) -> Self {
-        Self {
-            pages: Vec::new(),
-            presumed_index,
-        }
-    }
-    fn len(&self) -> usize {
-        self.pages.len()
-    }
-    fn push(&mut self, page: Page) {
-        self.pages.push(page);
-    }
-}
-
-impl std::ops::Index<usize> for Row {
-    type Output = Page;
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.pages[index]
-    }
-}
-
-impl std::ops::Index<Range<usize>> for Row {
-    type Output = [Page];
-    fn index(&self, index: Range<usize>) -> &Self::Output {
-        &self.pages[index.start..index.end]
-    }
-}
-
-impl std::ops::Index<RangeFull> for Row {
-    type Output = [Page];
-    fn index(&self, _: RangeFull) -> &Self::Output {
-        &self.pages[..]
-    }
-}
-
-impl<'a> IntoIterator for &'a Row {
-    type Item = &'a Page;
-    type IntoIter = std::slice::Iter<'a, Page>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.pages.iter()
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct Page {
-    pub(crate) virt_addr: *mut u8,
-    pub(crate) pfn: u64,
-}
-
-impl Page {
-    fn new(virt_addr: *mut u8, pfn: u64) -> Self {
-        Self { virt_addr, pfn }
-    }
-
-    fn phys_addr(&self) -> *mut u8 {
-        (self.pfn as usize * Consts::PAGE_SIZE) as *mut u8
-    }
-
-    fn dram_mapping(&self, bridge: Bridge, dimms: u8) -> usize {
-        let phys_addr = self.phys_addr();
-        let single_dimm_shift = if dimms == 1 { 1 } else { 0 };
-        let hashes = get_hashes(bridge);
-        let hashes = if dimms == 1 {
-            hashes[..5].to_vec()
-        } else {
-            hashes.to_vec()
-        };
-
-        let mut out: usize = 0;
-        for hash in hashes.iter().rev() {
-            let mut tmp: usize = 0;
-            for h in hash {
-                tmp ^= (phys_addr as usize >> (h - single_dimm_shift)) & 1;
-            }
-            out = (out << 1) | tmp;
-        }
-        out
-    }
-}
-
-fn get_hashes(bridge: Bridge) -> [Vec<u8>; 6] {
-    match bridge {
-        Bridge::Haswell => [
-            vec![14, 18],
-            vec![15, 19],
-            vec![16, 20],
-            vec![17, 21],
-            vec![17, 21],
-            vec![7, 8, 9, 12, 13, 18, 19],
-        ],
-        Bridge::Sandy => [
-            vec![14, 18],
-            vec![15, 19],
-            vec![16, 20],
-            vec![17, 21],
-            vec![17, 21],
-            vec![6],
-        ],
-    }
-}
 
 fn rowhammer(above_page: *mut u8, below_page: *mut u8) {
     let above_page64 = above_page as *mut u64;
