@@ -1,7 +1,10 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::ops::{Range, RangeFull};
+use std::{
+    cell::RefCell,
+    ops::{Range, RangeFull},
+};
 
 use memmap2::{MmapMut, MmapOptions};
 use procfs::{
@@ -22,6 +25,23 @@ impl Consts {
 pub(crate) struct Row {
     pages: Vec<Page>,
     pub(crate) presumed_index: usize,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Page {
+    pub(crate) virt_addr: *mut u8,
+    pub(crate) pfn: u64,
+    pub(crate) data: Option<PageData>,
+    bank_index: RefCell<Option<u8>>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PageData {
+    pub(crate) above_virt_addr: *mut u8,
+    pub(crate) above_pfn: u64,
+    pub(crate) below_virt_addr: *mut u8,
+    pub(crate) below_pfn: u64,
+    pub(crate) flips: Vec<usize>,
 }
 
 impl Row {
@@ -70,65 +90,78 @@ impl<'a> IntoIterator for &'a Row {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Page {
-    pub(crate) virt_addr: *mut u8,
-    pub(crate) pfn: u64,
+impl<'a> IntoIterator for &'a mut Row {
+    type Item = &'a mut Page;
+    type IntoIter = std::slice::IterMut<'a, Page>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.pages.iter_mut()
+    }
 }
 
 impl Page {
     pub(crate) fn new(virt_addr: *mut u8, pfn: u64) -> Self {
-        Self { virt_addr, pfn }
+        Self {
+            virt_addr,
+            pfn,
+            bank_index: RefCell::new(None),
+            data: None,
+        }
     }
 
     pub(crate) fn phys_addr(&self) -> *mut u8 {
         (self.pfn as usize * Consts::PAGE_SIZE) as *mut u8
     }
 
-    pub(crate) fn dram_mapping(&self, bridge: Bridge, dimms: u8) -> usize {
-        let phys_addr = self.phys_addr();
-        let single_dimm_shift = if dimms == 1 { 1 } else { 0 };
-        let hashes = get_hashes(bridge);
-        let hashes = if dimms == 1 {
-            hashes[..5].to_vec()
-        } else {
-            hashes.to_vec()
-        };
-
-        let mut out: usize = 0;
-        for hash in hashes {
-            let mut tmp: usize = 0;
-            for h in hash {
-                tmp ^= (phys_addr as usize >> (h - single_dimm_shift)) & 1;
+    pub(crate) fn bank_index(&self, bridge: Bridge, dimms: u8) -> u8 {
+        let mut bank_index = self.bank_index.borrow_mut();
+        match *bank_index {
+            Some(b) => b,
+            None => {
+                *bank_index = Some(self.calc_bank_index(bridge, dimms));
+                bank_index.expect("Something went wrong when caching bank index")
             }
-            out = (out << 1) | tmp;
+        }
+    }
+
+    fn calc_bank_index(&self, bridge: Bridge, dimms: u8) -> u8 {
+        let phys_addr = self.phys_addr() as usize;
+        let bank_bits = get_bank_bits(bridge);
+        let bank_bits = if dimms == 2 {
+            &bank_bits
+        } else {
+            &bank_bits[..bank_bits.len() - 1]
+        };
+        let mut out = 0u8;
+        for bits in bank_bits {
+            for bit in bits {
+                out ^= ((phys_addr >> bit) & 1) as u8;
+            }
+            out <<= 1;
         }
         out
     }
 }
 
-pub(crate) fn get_hashes(bridge: Bridge) -> Vec<Vec<u8>> {
+impl PageData {
+    pub(crate) fn new(above: &Page, below: &Page, flips: Vec<usize>) -> Self {
+        Self {
+            above_virt_addr: above.virt_addr,
+            above_pfn: above.pfn,
+            below_virt_addr: below.virt_addr,
+            below_pfn: below.pfn,
+            flips,
+        }
+    }
+}
+
+pub(crate) fn get_bank_bits(bridge: Bridge) -> Vec<Vec<u8>> {
     match bridge {
         Bridge::Haswell => vec![
-            vec![6],
             vec![14, 18],
             vec![15, 19],
             vec![16, 20],
             vec![17, 21],
-            vec![8, 11, 13, 15],
-            vec![16, 23, 25, 30],
-            vec![7, 9, 11, 12, 14],
-            vec![7, 9, 13, 22, 24],
-            vec![10, 12, 15, 23, 27],
-            vec![14, 15, 22, 26, 28],
-            vec![15, 17, 22, 25, 29],
-            vec![9, 11, 23, 28, 29],
-            vec![9, 15, 26, 27, 30],
-            // vec![14, 18],
-            // vec![15, 19],
-            // vec![16, 20],
-            // vec![17, 21],
-            // vec![7, 8, 9, 12, 13, 18, 19],
+            vec![7, 8, 9, 12, 13, 18, 19],
         ],
         Bridge::Sandy => vec![
             vec![14, 18],
