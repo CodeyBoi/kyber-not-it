@@ -41,7 +41,7 @@ pub(crate) struct PageData {
     pub(crate) above_pfn: u64,
     pub(crate) below_virt_addr: *mut u8,
     pub(crate) below_pfn: u64,
-    pub(crate) flips: Vec<usize>,
+    pub(crate) flips: Vec<u16>,
 }
 
 impl Row {
@@ -143,7 +143,7 @@ impl Page {
 }
 
 impl PageData {
-    pub(crate) fn new(above: &Page, below: &Page, flips: Vec<usize>) -> Self {
+    pub(crate) fn new(above: &Page, below: &Page, flips: Vec<u16>) -> Self {
         Self {
             above_virt_addr: above.virt_addr,
             above_pfn: above.pfn,

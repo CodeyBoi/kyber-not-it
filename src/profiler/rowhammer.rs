@@ -64,15 +64,23 @@ fn collect_pages_by_row(mmap: &mut MmapMut, pagemap: &mut PageMap, row_size: usi
     rows
 }
 
+/// A lookup table for the number of set bits in a nibble.
+const NO_OF_SET_BITS: [u8; 16] = [
+    0, 1, 1, 2, 1, 2, 2, 3, // 0-7
+    1, 2, 2, 3, 2, 3, 3, 4, // 8-15
+];
+
+/// Counts the number of set bits in `byte`.
+fn count_set_bits(byte: u8) -> u8 {
+    NO_OF_SET_BITS[(byte & 0b1111) as usize] + NO_OF_SET_BITS[(byte >> 4) as usize]
+}
+
 fn init_row(row: &[Page], pattern: u64) {
     for page in row {
         let base_ptr = page.virt_addr as *mut u64;
         for i in 0..Consts::PAGE_SIZE / size_of_val(&pattern) {
             unsafe {
                 *base_ptr.add(i) = pattern;
-                // let ptr = base_ptr.add(i);
-                // *ptr = pattern;
-                // _mm_clflush(ptr);
             }
         }
     }
@@ -97,22 +105,25 @@ fn index_of_set_bits(byte: u8) -> Vec<usize> {
 ///
 /// # Returns
 ///
-/// A `Vec` with tuples containing a `Page` of the page with the flipped
-/// bit, and a `Vec` containing all indices of the flipped bits.
-fn find_flips(page: &Page) -> Vec<usize> {
+/// The memory pointed to by `Page`.
+fn find_flips(page: &Page) -> (Vec<u16>, u64) {
     let mut flips = Vec::new();
-    for i in 0..Consts::PAGE_SIZE {
+    let mut no_of_flips: u64 = 0;
+    let base_ptr = page.virt_addr as *const u16;
+    unsafe {
+        _mm_clflush(page.virt_addr);
+    }
+    for i in 0..Consts::PAGE_SIZE / 2 {
         unsafe {
-            _mm_clflush(page.virt_addr);
-            let byte = *(page.virt_addr).add(i);
-            if byte != 0 {
-                for bit_index in index_of_set_bits(byte) {
-                    flips.push(i * 8 + bit_index);
-                }
+            let val = *base_ptr.add(i);
+            flips.push(val);
+            if val != 0 {
+                no_of_flips +=
+                    (count_set_bits(val as u8) + count_set_bits((val >> 8) as u8)) as u64;
             }
         }
     }
-    flips
+    (flips, no_of_flips)
 }
 
 fn hammer_all_reachable_pages(
@@ -123,7 +134,7 @@ fn hammer_all_reachable_pages(
 ) -> ProcResult<()> {
     let pagemap = &mut Process::myself()?.pagemap()?;
     let row_size = 128 * 1024 * dimms as usize;
-    let pattern = FRODO_HAMMER;
+    let pattern = BLAST;
 
     println!("Collecting all pages in all rows...");
     let pages_by_row = collect_pages_by_row(mmap, pagemap, row_size);
@@ -134,7 +145,7 @@ fn hammer_all_reachable_pages(
 
     if pages_by_row.len() < 3 {
         eprintln!(
-            "[!] Can't hammer rows - only got {} rows total. Are you running as sudo?",
+            "[!] Can't hammer rows - only got {} rows total. Make sure you're running as sudo!",
             pages_by_row.len()
         );
         return Ok(());
@@ -210,18 +221,20 @@ fn hammer_all_reachable_pages(
             .zip(&mut target_row)
             .zip(below_row.into_iter())
         {
-            let flips = find_flips(target_page);
-            total_flips += flips.len();
-            if flips.len() > 0 {
+            let (flips, no_of_flips) = find_flips(target_page);
+            total_flips += no_of_flips;
+            if no_of_flips > 0 {
                 println!(
-                    "{} flips found in page {:#x} at indices {:?}",
-                    flips.len(),
-                    target_page.pfn,
-                    flips,
+                    "Found {} flips found in page {:#x}",
+                    no_of_flips, target_page.pfn,
                 );
             }
             target_page.data = Some(PageData::new(above_page, below_page, flips));
         }
+        println!(
+            "Dumping row data for row {}:\n{:#?}\n",
+            target_row_index, target_row
+        );
         row_data.push(target_row);
 
         let pages_tested = rows_tested * (row_size / Consts::PAGE_SIZE) as u32;
@@ -232,7 +245,6 @@ fn hammer_all_reachable_pages(
             pages_tested,
         );
     }
-    println!("{:?}", row_data);
     Ok(())
 }
 
