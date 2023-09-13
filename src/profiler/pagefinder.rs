@@ -1,12 +1,11 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{fs::{File, create_dir}, io::Write};
+use std::{fs::{File, create_dir}, io::{self, Write}, error::{self, Error}};
 
 use procfs::process::Process;
 
 use crate::profiler::utils::{self, Consts, Page};
-
 
 pub(crate) struct PageCandidate {
     target_page: Page,
@@ -59,18 +58,18 @@ fn find_page_candidate(pages: &[PageCandidate], page_nbr: u64) -> Option<&PageCa
     pages.iter().find(|page_candidate| page_candidate.target_page.pfn == page_nbr)
 }
 
-pub(crate) fn output_page(page_candidate: &PageCandidate) {
-    let mut path = std::env::current_dir().unwrap();
+pub(crate) fn output_page(page_candidate: &PageCandidate) -> io::Result<()>{
+    let mut path = std::env::current_dir()?;
 
     if !path.join("data").exists() {
-        create_dir(path.join("data")).unwrap();
+        create_dir(path.join("data"))?;
     }
 
     path.push(format!("data/V_{}", page_candidate.target_page.virt_addr as u64));
     path.set_extension("out");
     println!("PATH: {:#?}", path);
 
-    let mut file = File::create(path).unwrap();
+    let mut file = File::create(path)?;
 
     file.write_all(format!("Page: {}, addr: {}\nAbove: {}, addr: {}, Below: {}, addr: {}\n",
                             page_candidate.target_page.pfn,
@@ -79,25 +78,27 @@ pub(crate) fn output_page(page_candidate: &PageCandidate) {
                             page_candidate.above_page.virt_addr as u64,
                             page_candidate.below_page.pfn,
                             page_candidate.below_page.virt_addr as u64,
-                        ).as_bytes()).unwrap();
+                        ).as_bytes())?;
 
     file.write_all(format!(
                             "Score: {}\nbit flips on halfword index:\n", 
                             page_candidate.score
-                        ).as_bytes()).unwrap();
+                        ).as_bytes())?;
 
     let target_flips = page_candidate.target_page.data.as_ref().unwrap().flips;
 
     for i in 0..Consts::MAX_BITS {
-        file.write_all(format!("{}\t", i).as_bytes()).unwrap();
+        file.write_all(format!("{}\t", i).as_bytes())?;
         if i == Consts::MAX_BITS - 1 {
-            file.write(b"\n").unwrap();
+            file.write(b"\n")?;
         }
     } 
 
     for value in target_flips {
-        file.write_all(format!("{value}\t").as_bytes()).unwrap();
+        file.write_all(format!("{value}\t").as_bytes())?;
     }
+
+    Ok(())
 }
 
 fn get_candidate_pages(pages: &[Page]) -> Vec<PageCandidate> {
