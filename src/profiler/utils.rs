@@ -41,7 +41,7 @@ pub(crate) struct PageData {
     pub(crate) above_pfn: u64,
     pub(crate) below_virt_addr: *mut u8,
     pub(crate) below_pfn: u64,
-    pub(crate) flips: Vec<u16>,
+    pub(crate) flips: [u8; Consts::MAX_BITS],
 }
 
 impl Row {
@@ -123,6 +123,11 @@ impl Page {
         }
     }
 
+    pub(crate) fn col(&self) -> u64 {
+        let phys_addr = self.phys_addr() as u64;
+        (phys_addr & ((0b1 << 7) - 0b1)) | ((phys_addr >> 8) & ((1 << 6) - 1) << 7)
+    }
+
     fn calc_bank_index(&self, bridge: Bridge, dimms: u8) -> u8 {
         let phys_addr = self.phys_addr() as usize;
         let bank_bits = get_bank_bits(bridge);
@@ -149,7 +154,7 @@ impl PageData {
             above_pfn: above.pfn,
             below_virt_addr: below.virt_addr,
             below_pfn: below.pfn,
-            flips,
+            flips: [0; Consts::MAX_BITS],
         }
     }
 }
