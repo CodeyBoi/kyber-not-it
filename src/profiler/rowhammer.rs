@@ -1,66 +1,39 @@
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
-use std::{
-    arch::x86_64::_mm_clflush,
-    mem::size_of_val,
-    time::{Duration, Instant},
-};
+use std::{arch::x86_64::_mm_clflush, mem::size_of_val, time::Instant};
 
 use memmap2::MmapMut;
-use procfs::{
-    process::{PageMap, Process},
-    ProcResult,
-};
+use procfs::{process::Process, ProcResult};
 use rand::Rng;
 
 use crate::{
-    profiler::utils::{
-        setup_mapping,
-        get_page_frame_number,
-        collect_pages_by_row,
-        Consts,
-        PageData,
-        Page,
-        Row,
-    },
+    profiler::utils::{collect_pages_by_row, setup_mapping, Consts, Page, PageData},
     Bridge,
 };
 
-const NO_OF_READS: u64 = 27 * 100 * 1000 * 4;
-const OFF_ON: u64 = 0x5555555555555555;
-const ON_OFF: u64 = 0xaaaaaaaaaaaaaaaa;
-const STRIPE: u64 = 0x00FF00FF00FF00FF;
-const FRODO_HAMMER: u64 = 0x0100010001000100;
-const BLAST: u64 = u64::MAX;
+const NO_OF_READS: u64 = 27 * 100 * 1000 * 4 / 4;
 
-fn rowhammer(above_page: *mut u8, below_page: *mut u8) {
-    let above_page64 = above_page as *mut u64;
-    let below_page64 = below_page as *mut u64;
+// const OFF_ON: u16 = 0x5555;
+// const ON_OFF: u16 = 0xaaaa;
+// const STRIPE: u16 = 0x00FF;
+// const FRODO_HAMMER: u16 = 0x0100;
+const BLAST: u16 = u16::MAX;
+
+const PATTERN: u16 = BLAST;
+const INIT_PATTERN: u16 = 0x0;
+
+fn rowhammer(above_page: *const u8, below_page: *const u8) {
     for _ in 0..NO_OF_READS {
         unsafe {
             _mm_clflush(above_page);
-            above_page64.read_volatile();
+            above_page.read_volatile();
             _mm_clflush(below_page);
-            below_page64.read_volatile();
+            below_page.read_volatile();
         }
     }
 }
 
-/// A lookup table for the number of set bits in a nibble.
-const NO_OF_SET_BITS: [u8; 16] = [
-    0, 1, 1, 2, 1, 2, 2, 3, // 0-7
-    1, 2, 2, 3, 2, 3, 3, 4, // 8-15
-];
-
-/// Counts the number of set bits in `byte`.
-fn count_set_bits(byte: u8) -> u8 {
-    NO_OF_SET_BITS[(byte & 0b1111) as usize] + NO_OF_SET_BITS[(byte >> 4) as usize]
-}
-
-fn init_row(row: &[Page], pattern: u64) {
+fn init_row(row: &[Page], pattern: u16) {
     for page in row {
-        let base_ptr = page.virt_addr as *mut u64;
+        let base_ptr = page.virt_addr as *mut u16;
         for i in 0..Consts::PAGE_SIZE / size_of_val(&pattern) {
             unsafe {
                 *base_ptr.add(i) = pattern;
@@ -69,55 +42,32 @@ fn init_row(row: &[Page], pattern: u64) {
     }
 }
 
-/// Finds the indices (0-7) of the set bits in `byte`.
-///
-/// # Returns
-///
-/// A `Vec` containing the indices of the set bits in `byte`.
-fn index_of_set_bits(byte: u8) -> Vec<usize> {
-    let mut indices = Vec::new();
-    for i in 0..8 {
-        if byte & (0b1 << i) > 0 {
-            indices.push(i);
-        }
-    }
-    indices
-}
-
 /// Finds flipped (non-zero) bits in `row`.
 ///
 /// # Returns
-///
-/// The memory pointed to by `Page`.
-fn find_flips(page: &Page) -> (Vec<u16>, u64) {
-    let mut flips = Vec::new();
-    let mut no_of_flips: u64 = 0;
+fn find_flips(page: &Page) -> [u64; Consts::MAX_BITS] {
+    let mut flips = [0; Consts::MAX_BITS];
     let base_ptr = page.virt_addr as *const u16;
-    unsafe {
-        _mm_clflush(page.virt_addr);
-    }
     for i in 0..Consts::PAGE_SIZE / 2 {
         unsafe {
-            let val = *base_ptr.add(i);
-            flips.push(val);
-            if val != 0 {
-                no_of_flips +=
-                    (count_set_bits(val as u8) + count_set_bits((val >> 8) as u8)) as u64;
+            let ptr = base_ptr.add(i);
+            _mm_clflush(ptr as *const u8);
+            for bit in 0..size_of_val(&INIT_PATTERN) * 8 {
+                flips[bit] += (((*ptr >> bit) & 1) ^ ((INIT_PATTERN >> bit) & 1)) as u64;
             }
         }
     }
-    (flips, no_of_flips)
+    flips
 }
 
 fn hammer_all_reachable_pages(
     mmap: &mut MmapMut,
-    cores: u8,
+    _cores: u8,
     dimms: u8,
     bridge: Bridge,
 ) -> ProcResult<()> {
     let pagemap = &mut Process::myself()?.pagemap()?;
     let row_size = 128 * 1024 * dimms as usize;
-    let pattern = BLAST;
 
     println!("Collecting all pages in all rows...");
     let pages_by_row = collect_pages_by_row(mmap, pagemap, row_size);
@@ -134,10 +84,12 @@ fn hammer_all_reachable_pages(
         return Ok(());
     }
 
+    println!("Starting rowhammer test...");
+
     let mut row_data = Vec::new();
 
     let mut rng = rand::thread_rng();
-    'main: for above_row_index in 0..pages_by_row.len() - 2 {
+    'main: for _ in 0..pages_by_row.len() - 2 {
         let above_row_index = rng.gen::<usize>() % (pages_by_row.len() - 2);
         let target_row_index = above_row_index + 1;
         let below_row_index = above_row_index + 2;
@@ -148,86 +100,95 @@ fn hammer_all_reachable_pages(
 
         for i in 0..3 {
             if pages_by_row[above_row_index + i].len() != row_size as usize / Consts::PAGE_SIZE {
-                eprintln!(
-                    "[!] Can't hammer row {target_row_index} - only got {} (of {}) pages from row {}.",
-                    pages_by_row[above_row_index + i].len(),
-                    row_size as usize / Consts::PAGE_SIZE,
-                    above_row_index + i,
-                );
+                // eprintln!(
+                //     "[!] Can't hammer row {target_row_index} - only got {} (of {}) pages from row {}.",
+                //     pages_by_row[above_row_index + i].len(),
+                //     row_size as usize / Consts::PAGE_SIZE,
+                //     above_row_index + i,
+                // );
                 continue 'main;
             }
         }
 
         // Initialize rows (above and below get aggressor pattern, i.e. 0b0101, and target row gets zeroed)
-        init_row(&above_row[..], pattern);
-        init_row(&target_row[..], 0);
-        init_row(&below_row[..], pattern);
+        init_row(&above_row[..], PATTERN);
+        init_row(&target_row[..], INIT_PATTERN);
+        init_row(&below_row[..], PATTERN);
 
-        let mut dram_map_time = Duration::default();
-        let mut hammering_time = Duration::default();
+        // Collect a list of addresses that are in the same bank
+        let mut banks = Vec::new();
+        let mut virt_addrs = Vec::new();
         for above_page in above_row {
-            let before = Instant::now();
             for below_page in below_row {
-                // Filter out pages which are not in the same bank
-                let above_row_bank = above_page.bank_index(bridge, dimms);
-                let below_row_bank = below_page.bank_index(bridge, dimms);
-                if above_row_bank != below_row_bank {
-                    // eprintln!(
-                    //     "Bank mismatch: {} != {}",
-                    //     above_row_bank, below_row_bank
-                    // );
-                    continue;
+                let above_bank = above_page.bank_index(bridge, dimms);
+                let below_bank = below_page.bank_index(bridge, dimms);
+                if above_bank == below_bank && !banks.contains(&above_bank) {
+                    banks.push(above_bank);
+                    virt_addrs.push((
+                        above_page.virt_addr as *const u8,
+                        below_page.virt_addr as *const u8,
+                    ));
                 }
-                dram_map_time += before.elapsed();
-
-                // RELEASE THE BEAST
-                let before = Instant::now();
-                rowhammer(above_page.virt_addr, below_page.virt_addr);
-                hammering_time += before.elapsed();
-                break;
             }
         }
-        rows_tested += 1;
 
+        let before = Instant::now();
+
+        // RELEASE THE BEAST
+        for (above_va, below_va) in virt_addrs {
+            rowhammer(above_va, below_va);
+        }
+
+        rows_tested += 1;
         println!(
-            "Hammering row {} took {:.2?} seconds ({:.2?} spent hashing, {:.2?} spent hammering)",
+            "Hammering row {} took {:.2?} seconds",
             target_row_index,
-            dram_map_time + hammering_time,
-            dram_map_time,
-            hammering_time,
+            before.elapsed(),
         );
 
-        // Collect data into `row_data` for each row
+        // Count the number of flipped bits in the target row after each test
         let mut target_row = target_row.clone();
-        for ((above_page, target_page), below_page) in above_row
-            .into_iter()
-            .zip(&mut target_row)
-            .zip(below_row.into_iter())
+        for ((above_page, target_page), below_page) in
+            above_row.into_iter().zip(&mut target_row).zip(below_row)
         {
-            let (flips, no_of_flips) = find_flips(target_page);
-            total_flips += no_of_flips;
-            if no_of_flips > 0 {
+            let flips = find_flips(target_page);
+            match target_page.data {
+                Some(ref mut data) => {
+                    for (old_flip, new_flip) in data.flips.iter_mut().zip(flips) {
+                        *old_flip += new_flip;
+                    }
+                }
+                None => {
+                    target_page.data = Some(PageData::new(&above_page, &below_page, flips));
+                }
+            }
+            total_flips += flips.iter().sum::<u64>();
+        }
+
+        println!("\tTarget page\tAbove PFN\tBelow PFN\tFlips\tFlipped bits");
+        for page in &target_row {
+            let flips = page.data.as_ref().unwrap().flips;
+            let flip_sum = flips.iter().sum::<u64>();
+            if flip_sum > 0 {
+                let data = page.data.as_ref().unwrap();
                 println!(
-                    "Found {} flips found in page {:#x}",
-                    no_of_flips, target_page.pfn,
+                    ">\t{:#x}\t{:#x}\t{:#x}\t{}\t{:?}",
+                    page.pfn, data.above_pfn as usize, data.below_pfn as usize, flip_sum, flips,
                 );
             }
-            target_page.data = Some(PageData::new(above_page, below_page, flips));
         }
-        println!(
-            "Dumping row data for row {}:\n{:#?}\n",
-            target_row_index, target_row
-        );
         row_data.push(target_row);
 
         let pages_tested = rows_tested * (row_size / Consts::PAGE_SIZE) as u32;
         println!(
-            "So far: {:.2} flips per page ({} flips total over {} pages tested)\n",
+            "\nSo far: {:.2} flips per page ({:.2} per row, {} flips total over {} pages tested)\n",
             total_flips as f64 / pages_tested as f64,
+            total_flips as f64 / rows_tested as f64,
             total_flips,
             pages_tested,
         );
     }
+    println!("Done!");
     Ok(())
 }
 
