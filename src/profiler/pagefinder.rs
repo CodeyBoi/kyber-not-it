@@ -1,11 +1,22 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{fs::{File, create_dir}, io::{self, Write}, error::{self, Error}};
+use std::{
+    fs::{File, create_dir},
+    io::{self, Write, Read, BufReader, BufRead},
+    error::{self, Error},
+};
 
 use procfs::process::Process;
 
-use crate::profiler::utils::{self, Consts, Page};
+use crate::profiler::utils::{
+                     self,
+                     Consts,
+                     Page,
+                     fill_memory,
+                     setup_mapping,
+                     collect_pages_by_row,
+};
 
 pub(crate) struct PageCandidate {
     target_page: Page,
@@ -28,6 +39,7 @@ impl PageCandidate {
         }
     }
 
+    /// Calculates the score of the PageCandidate
     fn calculate_score(flips: &[u8]) -> u32 {
         let position_bonus = 10;
         let score = (flips[8] + 1) as u32 * position_bonus;
@@ -36,6 +48,7 @@ impl PageCandidate {
     }
 }
 
+/// Calculates the risk score of a page based on the uppermost 8 bits per halfword
 fn calculate_risk_score(page: &Page) -> u32 {
     let mut risk_score = 0;
     let max_position = 9;
@@ -48,6 +61,7 @@ fn calculate_risk_score(page: &Page) -> u32 {
     risk_score as u32
 }
 
+/// Print the number of 256 flips on the PageCandidate
 fn count_256_flip(page_candidate: &PageCandidate) {
     let target_flips = page_candidate.target_page.data.as_ref().unwrap().flips;
 
@@ -58,7 +72,17 @@ fn find_page_candidate(pages: &[PageCandidate], page_nbr: u64) -> Option<&PageCa
     pages.iter().find(|page_candidate| page_candidate.target_page.pfn == page_nbr)
 }
 
-pub(crate) fn output_page(page_candidate: &PageCandidate) -> io::Result<()>{
+fn setup_page_candidates() {
+    let fraction_of_phys_memory = 0.8;
+
+    let mut mmap = setup_mapping(fraction_of_phys_memory);
+
+    //collect_pages_by_row(&mut mmap, pagemap, row_size);
+
+}
+
+/// Output the PageCandidate to a file
+fn output_page(page_candidate: &PageCandidate) -> io::Result<()>{
     let mut path = std::env::current_dir()?;
 
     if !path.join("data").exists() {
@@ -101,19 +125,63 @@ pub(crate) fn output_page(page_candidate: &PageCandidate) -> io::Result<()>{
     Ok(())
 }
 
+/// Read the flips.txt file and return a vector of potential exploitable pages
 fn get_candidate_pages(pages: &[Page]) -> Vec<PageCandidate> {
     let mut page_candidates = Vec::new();
 
-    //for page in pages {
-    //    let above_page = page.above_page.unwrap();
-    //    let below_page = page.below_page.unwrap();
+    let mut path = std::env::current_dir().unwrap();
+    let file_name = "flips.txt";
+    path.push(file_name);
 
-    //    let page_candidate = PageCandidate::new(*page, above_page, below_page);
-    //    page_candidates.push(page_candidate);
-    //}
+    let file = File::open(path).expect("Failed to open file {path}");
+
+    let lines = io::BufReader::new(file).lines();
+    let start = std::time::Instant::now();
+
+    for line in lines {
+        if let Ok(s) = line {
+
+            // Dont read line unless it starts with '>'
+            if !s.starts_with(">") {
+                continue;
+            }
+
+            let str = s.as_str();
+
+            let start_flips = str.find("[").unwrap();
+            let end_flips = str.find("]").unwrap_or(str.len());
+
+            let flips = &str[start_flips+1..end_flips];
+            let flips = flips.split(",").map(|s| s.trim().parse::<u32>().unwrap()).collect::<Vec<_>>();
+
+            let good_sum = flips[8];
+            let risk_sum = flips[9..].iter().enumerate().fold(0, |acc, (i, bit)| {
+                acc + i as u32 * bit
+            });
+
+            let split_line = str[1..].split_whitespace().collect::<Vec<_>>();
+
+            if risk_sum > 0 || good_sum < 3 {
+                println!("Skipping Page {}, got risk: {}, and 256 flips {}",
+                            split_line[1],
+                            risk_sum,
+                            good_sum);
+                continue;
+            }
+
+            // Create PageCandidate from the page and add it to the vector
+            // Take the first hex value from split_line and parse it to u64
+            let page_nbr = split_line[0].parse::<u64>().unwrap();
+            let above_page_nbr = split_line[1].parse::<u64>().unwrap();
+            let below_page_nbr = split_line[2].parse::<u64>().unwrap();
+
+        }
+    }
+    println!("Time: {:#?}", start.elapsed());
 
     page_candidates
 }
+
 
 pub(crate) fn some_stuff(virtual_address: u8) -> u64 {
     let process = Process::myself().expect("Failed to read process");
@@ -141,4 +209,9 @@ pub(crate) fn some_stuff(virtual_address: u8) -> u64 {
     }
 
     virtual_address as u64
+}
+
+pub(crate) fn main() {
+    let pages = [Page::new(0x001 as *mut u8, 1)];
+    get_candidate_pages(&pages);
 }

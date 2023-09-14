@@ -258,6 +258,29 @@ pub(crate) fn get_page_frame_number(
     }
 }
 
+pub(crate) fn collect_pages_by_row(mmap: &mut MmapMut, pagemap: &mut PageMap, row_size: usize) -> Vec<Row> {
+    let base_ptr = mmap.as_mut_ptr();
+    let mut rows = Vec::new();
+    for offset in (0..mmap.len()).step_by(Consts::PAGE_SIZE) {
+        unsafe {
+            let virtual_addr = base_ptr.add(offset);
+            if let Ok(pfn) = get_page_frame_number(pagemap, virtual_addr) {
+                let physical_addr = pfn as usize * Consts::PAGE_SIZE;
+                let presumed_row_index = physical_addr as usize / row_size;
+                // If the row index is larger than the number of rows, we
+                // push new rows until we have enough.
+                if presumed_row_index >= rows.len() {
+                    for i in rows.len()..presumed_row_index + 1 {
+                        rows.push(Row::new(i));
+                    }
+                }
+                rows[presumed_row_index].push(Page::new(virtual_addr, pfn));
+            }
+        }
+    }
+    rows
+}
+
 pub(crate) fn get_phys_addr(pagemap: &mut PageMap, virtual_addr: *const u8) -> ProcResult<u64> {
     let pfn = get_page_frame_number(pagemap, virtual_addr)?;
     // Physical address of frame is page_frame_number * page_size + offset

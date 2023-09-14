@@ -15,11 +15,17 @@ use procfs::{
 use rand::Rng;
 
 use crate::{
-    profiler::utils::{get_page_frame_number, setup_mapping, Consts, PageData},
+    profiler::utils::{
+        setup_mapping,
+        get_page_frame_number,
+        collect_pages_by_row,
+        Consts,
+        PageData,
+        Page,
+        Row,
+    },
     Bridge,
 };
-
-use super::utils::{Page, Row};
 
 const NO_OF_READS: u64 = 27 * 100 * 1000 * 4;
 const OFF_ON: u64 = 0x5555555555555555;
@@ -39,29 +45,6 @@ fn rowhammer(above_page: *mut u8, below_page: *mut u8) {
             below_page64.read_volatile();
         }
     }
-}
-
-fn collect_pages_by_row(mmap: &mut MmapMut, pagemap: &mut PageMap, row_size: usize) -> Vec<Row> {
-    let base_ptr = mmap.as_mut_ptr();
-    let mut rows = Vec::new();
-    for offset in (0..mmap.len()).step_by(Consts::PAGE_SIZE) {
-        unsafe {
-            let virtual_addr = base_ptr.add(offset);
-            if let Ok(pfn) = get_page_frame_number(pagemap, virtual_addr) {
-                let physical_addr = pfn as usize * Consts::PAGE_SIZE;
-                let presumed_row_index = physical_addr as usize / row_size;
-                // If the row index is larger than the number of rows, we
-                // push new rows until we have enough.
-                if presumed_row_index >= rows.len() {
-                    for i in rows.len()..presumed_row_index + 1 {
-                        rows.push(Row::new(i));
-                    }
-                }
-                rows[presumed_row_index].push(Page::new(virtual_addr, pfn));
-            }
-        }
-    }
-    rows
 }
 
 /// A lookup table for the number of set bits in a nibble.
@@ -249,7 +232,7 @@ fn hammer_all_reachable_pages(
 }
 
 pub(crate) fn main(fraction_of_phys_memory: f64, cores: u8, dimms: u8, bridge: Bridge) {
-    println!("Setting up memory map...");
+    println!("Setting up memory mapping...");
     let mut mmap = setup_mapping(fraction_of_phys_memory);
     hammer_all_reachable_pages(&mut mmap, cores, dimms, bridge).unwrap();
 }

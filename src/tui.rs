@@ -24,10 +24,11 @@ pub(crate) fn select_command() {
 
     println!("Available commands:");
     println!("\t1. Profile");
-    println!("\t2. Attack");
-    println!("\t3. Exit\n");
+    println!("\t2. Evaluate");
+    println!("\t3. Attack");
+    println!("\t4. Exit\n");
 
-    print!("Select command (1-3): ");
+    print!("Select command (1-4): ");
 
     stdout.flush().unwrap();
 
@@ -37,8 +38,12 @@ pub(crate) fn select_command() {
             "1" => {
                 run_profiler();
                 break;
-            }
+            },
             "2" => {
+                run_evaluation();
+                break;
+            },
+            "3" => {
                 let mut rng = rand::thread_rng();
                 let mut progress = 0;
                 while progress < 100 {
@@ -51,15 +56,15 @@ pub(crate) fn select_command() {
                 println!("\rRunning attack (done!)");
                 println!("\n*** CRACKED KYBER! MASTER THESIS COMPLETE! ***\n");
                 break;
-            }
-            "3" => {
+            },
+            "4" => {
                 println!("Bye!");
                 break;
-            }
+            },
             _ => {
                 print!("Please enter a valid command (1-3): ");
                 stdout.flush().unwrap();
-            }
+            },
         }
     }
 }
@@ -134,4 +139,8 @@ fn run_profiler() {
             }
         }
     }
+}
+
+fn run_evaluation() {
+    profiler::pagefinder::main();
 }

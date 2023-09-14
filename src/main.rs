@@ -13,6 +13,7 @@ struct Cli {
 enum Command {
     /// Profiles bit flip locations and suitable pages for a rowhammer attack
     Profile(ProfilerArgs),
+    Evaluate(ProfilerArgs),
 }
 
 #[derive(Args, Debug)]
@@ -49,6 +50,9 @@ fn main() {
                     args.dimms,
                     args.bridge,
                 );
+            }
+            Command::Evaluate(args) => {
+                profiler::pagefinder::main();
             }
         },
     }
