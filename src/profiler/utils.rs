@@ -130,12 +130,7 @@ impl Page {
 
     fn calc_bank_index(&self, bridge: Bridge, dimms: u8) -> u8 {
         let phys_addr = self.phys_addr() as usize;
-        let bank_bits = get_bank_bits(bridge);
-        let bank_bits = if dimms == 2 {
-            &bank_bits
-        } else {
-            &bank_bits[..bank_bits.len() - 1]
-        };
+        let bank_bits = get_bank_bits(bridge, dimms);
         let mut out = 0u8;
         for bits in bank_bits {
             for bit in bits {
@@ -159,16 +154,19 @@ impl PageData {
     }
 }
 
-pub(crate) fn get_bank_bits(bridge: Bridge) -> Vec<Vec<u8>> {
-    match bridge {
-        Bridge::Haswell => vec![
+pub(crate) fn get_bank_bits(bridge: Bridge, dimms: u8) -> Vec<Vec<u8>> {
+    assert!(dimms == 1 || dimms == 2);
+    match (bridge, dimms) {
+        (Bridge::Haswell, 1) => vec![vec![13, 16], vec![14, 17], vec![15, 18]],
+        (Bridge::Haswell, 2) => vec![
             vec![14, 18],
             vec![15, 19],
             vec![16, 20],
             vec![17, 21],
             vec![7, 8, 9, 12, 13, 18, 19],
         ],
-        Bridge::Sandy => vec![
+        (Bridge::Sandy, 1) => vec![vec![6], vec![14, 17], vec![15, 18], vec![16, 19]],
+        (Bridge::Sandy, 2) => vec![
             vec![14, 18],
             vec![15, 19],
             vec![16, 20],
@@ -176,6 +174,10 @@ pub(crate) fn get_bank_bits(bridge: Bridge) -> Vec<Vec<u8>> {
             vec![17, 21],
             vec![6],
         ],
+        (_, _) => panic!(
+            "Invalid combination of bridge ({:?}) and dimms ({})",
+            bridge, dimms
+        ),
     }
 }
 
@@ -258,7 +260,11 @@ pub(crate) fn get_page_frame_number(
     }
 }
 
-pub(crate) fn collect_pages_by_row(mmap: &mut MmapMut, pagemap: &mut PageMap, row_size: usize) -> Vec<Row> {
+pub(crate) fn collect_pages_by_row(
+    mmap: &mut MmapMut,
+    pagemap: &mut PageMap,
+    row_size: usize,
+) -> Vec<Row> {
     let base_ptr = mmap.as_mut_ptr();
     let mut rows = Vec::new();
     for offset in (0..mmap.len()).step_by(Consts::PAGE_SIZE) {
