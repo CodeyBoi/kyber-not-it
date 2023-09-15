@@ -142,5 +142,39 @@ fn run_profiler() {
 }
 
 fn run_evaluation() {
-    profiler::pagefinder::main();
+    let mut stdout = io::stdout();
+
+    println!("\t1. Run with default settings (-d 2)");
+    println!("\t2. Run with custom settings\n");
+
+    print!("Select command (1-2): ");
+    stdout.flush().unwrap();
+
+    loop {
+        let input = read_line();
+        match input.trim() {
+            "1" => {
+                profiler::pagefinder::main(2);
+                break;
+            }
+            "2" => {
+                let dimms: u8 = loop {
+                    print!("Number of RAM sticks on target machine: ");
+                    stdout.flush().unwrap();
+                    let input = read_line();
+                    if let Ok(d) = input.trim().parse() {
+                        break d;
+                    } else {
+                        eprintln!("Input must be an integer");
+                    }
+                };
+                profiler::pagefinder::main(dimms);
+                break;
+            }
+            _ => {
+                print!("Please enter a valid command (1-2): ");
+                stdout.flush().unwrap();
+            }
+        }
+    }
 }

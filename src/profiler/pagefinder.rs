@@ -8,7 +8,14 @@ use std::{
 
 use procfs::process::Process;
 
-use crate::profiler::utils::{self, setup_mapping, Consts, Page};
+use crate::profiler::utils::{
+                     self,
+                     setup_mapping,
+                     collect_pages_by_row,
+                     Consts,
+                     Page,
+                     Row,
+};
 
 pub(crate) struct PageCandidate {
     target_page: Page,
@@ -63,19 +70,55 @@ fn count_256_flip(page_candidate: &PageCandidate) {
     );
 }
 
-fn find_page_candidate(pages: &[PageCandidate], page_nbr: u64) -> Option<&PageCandidate> {
-    pages
-        .iter()
-        .find(|page_candidate| page_candidate.target_page.pfn == page_nbr)
+fn find_page(pages: &[Page], page_nbr: u64) -> Option<&Page> {
+    pages.iter().find(|page| page.pfn == page_nbr)
 }
 
-fn setup_page_candidates() {
-    let fraction_of_phys_memory = 0.8;
+fn setup_page_candidate(pages_by_row: Vec<Row>, page_numbers: &[u64; 3]) -> Result<PageCandidate, &'static str> {
 
-    let mut mmap = setup_mapping(fraction_of_phys_memory);
+    // Get page frame numbers
+    let target_pfn = page_numbers[0];
+    let above_pfn =  page_numbers[1];
+    let below_pfn = page_numbers[2];
 
-    //collect_pages_by_row(&mut mmap, pagemap, row_size);
+    // Find the rows that contains the target pages
+    for index in 0..pages_by_row.len() - 2 {
+        let above_row_index = index;
+        let target_row_index = index + 1;
+        let below_row_index = index + 2;
+
+        let above_row = &pages_by_row[above_row_index];
+        let target_row = &pages_by_row[target_row_index];
+        let below_row = &pages_by_row[below_row_index];
+
+        let Some(target_page) = find_page(&target_row[..], target_pfn) else {
+            println!("Target page not found in row, skipping row");
+            continue;
+        };
+
+        let Some(above_page) = find_page(&above_row[..], above_pfn) else {
+            println!("Above page not found in row, skipping row");
+            continue;
+        };
+
+        let Some(below_page) = find_page(&below_row[..], below_pfn) else {
+            println!("Below page not found in row, skipping row");
+            continue;
+        };
+
+        // If pages are found, create a PageCandidate
+        let target_page = Page::new(target_page.virt_addr, target_pfn);
+        let above_page = Page::new(above_page.virt_addr, above_pfn);
+        let below_page = Page::new(below_page.virt_addr, below_pfn);
+
+        let page_candidate = PageCandidate::new(target_page, above_page, below_page);
+
+        return Ok(page_candidate);
+    }
+
+    Err("Could not find page candidate in current mapping, remapping!!!")
 }
+
 
 /// Output the PageCandidate to a file
 fn output_page(page_candidate: &PageCandidate) -> io::Result<()> {
@@ -132,7 +175,7 @@ fn output_page(page_candidate: &PageCandidate) -> io::Result<()> {
 }
 
 /// Read the flips.txt file and return a vector of potential exploitable pages
-fn get_candidate_pages(pages: &[Page]) -> Vec<PageCandidate> {
+fn get_candidate_pages(pages_by_row: Vec<Row>) -> Result<Vec<PageCandidate>, &'static str> {
     let mut page_candidates = Vec::new();
 
     let mut path = std::env::current_dir().unwrap();
@@ -178,16 +221,19 @@ fn get_candidate_pages(pages: &[Page]) -> Vec<PageCandidate> {
                 continue;
             }
 
-            // Create PageCandidate from the page and add it to the vector
-            // Take the first hex value from split_line and parse it to u64
-            let page_nbr = split_line[0].parse::<u64>().unwrap();
+            let target_page_nbr = split_line[0].parse::<u64>().unwrap();
             let above_page_nbr = split_line[1].parse::<u64>().unwrap();
             let below_page_nbr = split_line[2].parse::<u64>().unwrap();
+
+            let page_numbers = [target_page_nbr, above_page_nbr, below_page_nbr];
+
+            let page_candidate = setup_page_candidate(pages_by_row, &page_numbers)?;
+            page_candidates.push(page_candidate);
         }
     }
     println!("Time: {:#?}", start.elapsed());
 
-    page_candidates
+    Ok(page_candidates)
 }
 
 pub(crate) fn some_stuff(virtual_address: u8) -> u64 {
@@ -218,7 +264,42 @@ pub(crate) fn some_stuff(virtual_address: u8) -> u64 {
     virtual_address as u64
 }
 
-pub(crate) fn main() {
-    let pages = [Page::new(0x001 as *mut u8, 1)];
-    get_candidate_pages(&pages);
+pub(crate) fn main(dimms: u8) {
+    let fraction_of_phys_memory = 0.1;
+    let row_size = 128 * 1024 * dimms as usize;
+
+    let (pages_by_row, candidates) = loop {
+        println!("Setting up memory mapping with {} of physical memory", fraction_of_phys_memory);
+        let mut mmap = setup_mapping(fraction_of_phys_memory);
+
+        println!("Collecting pages from mapping...");
+        let pages_by_row = collect_pages_by_row(&mut mmap, row_size);
+
+        let pages_by_row = match pages_by_row {
+            Ok(pages_by_row) => {
+                pages_by_row
+            }
+            Err(e) => {
+                println!("Couldn't collect pages from mapping, got {:#?}", e);
+                fraction_of_phys_memory += 0.1;
+                continue;
+            }
+        };
+
+        println!("Finding candidate pages...");
+        let candidates = get_candidate_pages(pages_by_row);
+        let candidates = match candidates {
+            Ok(candidates) => {
+                candidates
+            }
+            Err(e) => {
+                println!("Couldn't find candidate pages, got {:#?}", e);
+                fraction_of_phys_memory += 0.1;
+                continue;
+            }
+        };
+
+        println!("Found {} candidate pages", candidates.len());
+        break (pages_by_row, candidates);
+    };
 }

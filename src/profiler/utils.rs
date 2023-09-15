@@ -8,7 +8,7 @@ use std::{
 
 use memmap2::{MmapMut, MmapOptions};
 use procfs::{
-    process::{PageInfo, PageMap},
+    process::{Process, PageInfo, PageMap},
     ProcResult,
 };
 use sysinfo::{System, SystemExt};
@@ -258,9 +258,11 @@ pub(crate) fn get_page_frame_number(
     }
 }
 
-pub(crate) fn collect_pages_by_row(mmap: &mut MmapMut, pagemap: &mut PageMap, row_size: usize) -> Vec<Row> {
+pub(crate) fn collect_pages_by_row(mmap: &mut MmapMut,  row_size: usize) -> ProcResult<Vec<Row>> {
     let base_ptr = mmap.as_mut_ptr();
     let mut rows = Vec::new();
+    let pagemap = &mut Process::myself()?.pagemap()?;
+
     for offset in (0..mmap.len()).step_by(Consts::PAGE_SIZE) {
         unsafe {
             let virtual_addr = base_ptr.add(offset);
@@ -278,7 +280,7 @@ pub(crate) fn collect_pages_by_row(mmap: &mut MmapMut, pagemap: &mut PageMap, ro
             }
         }
     }
-    rows
+    Ok(rows)
 }
 
 pub(crate) fn get_phys_addr(pagemap: &mut PageMap, virtual_addr: *const u8) -> ProcResult<u64> {

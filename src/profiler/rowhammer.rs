@@ -1,7 +1,7 @@
 use std::{arch::x86_64::_mm_clflush, mem::size_of_val, time::Instant};
 
 use memmap2::MmapMut;
-use procfs::{process::Process, ProcResult};
+use procfs::ProcResult;
 use rand::Rng;
 
 use crate::{
@@ -66,11 +66,10 @@ fn hammer_all_reachable_pages(
     dimms: u8,
     bridge: Bridge,
 ) -> ProcResult<()> {
-    let pagemap = &mut Process::myself()?.pagemap()?;
     let row_size = 128 * 1024 * dimms as usize;
 
     println!("Collecting all pages in all rows...");
-    let pages_by_row = collect_pages_by_row(mmap, pagemap, row_size);
+    let pages_by_row = collect_pages_by_row(mmap, row_size)?;
 
     // let mut rng = rand::thread_rng();
     let mut total_flips = 0;
