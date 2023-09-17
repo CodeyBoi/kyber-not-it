@@ -8,14 +8,7 @@ use std::{
 
 use procfs::process::Process;
 
-use crate::profiler::utils::{
-                     self,
-                     setup_mapping,
-                     collect_pages_by_row,
-                     Consts,
-                     Page,
-                     Row,
-};
+use crate::profiler::utils::{self, collect_pages_by_row, setup_mapping, Consts, Page, Row};
 
 pub(crate) struct PageCandidate {
     target_page: Page,
@@ -74,11 +67,13 @@ fn find_page(pages: &[Page], page_nbr: u64) -> Option<&Page> {
     pages.iter().find(|page| page.pfn == page_nbr)
 }
 
-fn setup_page_candidate(pages_by_row: Vec<Row>, page_numbers: &[u64; 3]) -> Result<PageCandidate, &'static str> {
-
+fn setup_page_candidate(
+    pages_by_row: &Vec<Row>,
+    page_numbers: &[u64; 3],
+) -> Result<PageCandidate, &'static str> {
     // Get page frame numbers
     let target_pfn = page_numbers[0];
-    let above_pfn =  page_numbers[1];
+    let above_pfn = page_numbers[1];
     let below_pfn = page_numbers[2];
 
     // Find the rows that contains the target pages
@@ -118,7 +113,6 @@ fn setup_page_candidate(pages_by_row: Vec<Row>, page_numbers: &[u64; 3]) -> Resu
 
     Err("Could not find page candidate in current mapping, remapping!!!")
 }
-
 
 /// Output the PageCandidate to a file
 fn output_page(page_candidate: &PageCandidate) -> io::Result<()> {
@@ -175,7 +169,7 @@ fn output_page(page_candidate: &PageCandidate) -> io::Result<()> {
 }
 
 /// Read the flips.txt file and return a vector of potential exploitable pages
-fn get_candidate_pages(pages_by_row: Vec<Row>) -> Result<Vec<PageCandidate>, &'static str> {
+fn get_candidate_pages(pages_by_row: &Vec<Row>) -> Result<Vec<PageCandidate>, &'static str> {
     let mut page_candidates = Vec::new();
 
     let mut path = std::env::current_dir().unwrap();
@@ -265,20 +259,21 @@ pub(crate) fn some_stuff(virtual_address: u8) -> u64 {
 }
 
 pub(crate) fn main(dimms: u8) {
-    let fraction_of_phys_memory = 0.1;
+    let mut fraction_of_phys_memory = 0.1;
     let row_size = 128 * 1024 * dimms as usize;
 
     let (pages_by_row, candidates) = loop {
-        println!("Setting up memory mapping with {} of physical memory", fraction_of_phys_memory);
+        println!(
+            "Setting up memory mapping with {} of physical memory",
+            fraction_of_phys_memory
+        );
         let mut mmap = setup_mapping(fraction_of_phys_memory);
 
         println!("Collecting pages from mapping...");
         let pages_by_row = collect_pages_by_row(&mut mmap, row_size);
 
         let pages_by_row = match pages_by_row {
-            Ok(pages_by_row) => {
-                pages_by_row
-            }
+            Ok(pages_by_row) => pages_by_row,
             Err(e) => {
                 println!("Couldn't collect pages from mapping, got {:#?}", e);
                 fraction_of_phys_memory += 0.1;
@@ -287,11 +282,9 @@ pub(crate) fn main(dimms: u8) {
         };
 
         println!("Finding candidate pages...");
-        let candidates = get_candidate_pages(pages_by_row);
+        let candidates = get_candidate_pages(&pages_by_row);
         let candidates = match candidates {
-            Ok(candidates) => {
-                candidates
-            }
+            Ok(candidates) => candidates,
             Err(e) => {
                 println!("Couldn't find candidate pages, got {:#?}", e);
                 fraction_of_phys_memory += 0.1;

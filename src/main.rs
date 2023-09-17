@@ -52,7 +52,7 @@ fn main() {
                 );
             }
             Command::Evaluate(args) => {
-                profiler::pagefinder::main();
+                profiler::pagefinder::main(args.dimms);
             }
         },
     }

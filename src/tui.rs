@@ -38,11 +38,11 @@ pub(crate) fn select_command() {
             "1" => {
                 run_profiler();
                 break;
-            },
+            }
             "2" => {
                 run_evaluation();
                 break;
-            },
+            }
             "3" => {
                 let mut rng = rand::thread_rng();
                 let mut progress = 0;
@@ -56,15 +56,15 @@ pub(crate) fn select_command() {
                 println!("\rRunning attack (done!)");
                 println!("\n*** CRACKED KYBER! MASTER THESIS COMPLETE! ***\n");
                 break;
-            },
+            }
             "4" => {
                 println!("Bye!");
                 break;
-            },
+            }
             _ => {
                 print!("Please enter a valid command (1-3): ");
                 stdout.flush().unwrap();
-            },
+            }
         }
     }
 }

@@ -8,7 +8,7 @@ use std::{
 
 use memmap2::{MmapMut, MmapOptions};
 use procfs::{
-    process::{Process, PageInfo, PageMap},
+    process::{PageInfo, PageMap, Process},
     ProcResult,
 };
 use sysinfo::{System, SystemExt};
@@ -258,7 +258,7 @@ pub(crate) fn get_page_frame_number(
     }
 }
 
-pub(crate) fn collect_pages_by_row(mmap: &mut MmapMut,  row_size: usize) -> ProcResult<Vec<Row>> {
+pub(crate) fn collect_pages_by_row(mmap: &mut MmapMut, row_size: usize) -> ProcResult<Vec<Row>> {
     let base_ptr = mmap.as_mut_ptr();
     let mut rows = Vec::new();
     let pagemap = &mut Process::myself()?.pagemap()?;
