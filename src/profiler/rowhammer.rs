@@ -1,35 +1,23 @@
-use std::{arch::x86_64::_mm_clflush, mem::size_of_val, time::Instant};
+use std::{mem::size_of_val, time::Instant};
 
 use memmap2::MmapMut;
 use procfs::ProcResult;
 use rand::Rng;
 
 use crate::{
-    profiler::utils::{collect_pages_by_row, setup_mapping, Consts, Page, PageData},
+    profiler::utils::{
+        collect_pages_by_row, find_flips, rowhammer, setup_mapping, Consts, Page, PageData,
+    },
     Bridge,
 };
-
-const NO_OF_READS: u64 = 27 * 100 * 1000 * 4 / 4;
 
 // const OFF_ON: u16 = 0x5555;
 // const ON_OFF: u16 = 0xaaaa;
 // const STRIPE: u16 = 0x00FF;
 // const FRODO_HAMMER: u16 = 0x0100;
 const BLAST: u16 = u16::MAX;
-
-const PATTERN: u16 = BLAST;
 const INIT_PATTERN: u16 = 0x0;
-
-fn rowhammer(above_page: *const u8, below_page: *const u8) {
-    for _ in 0..NO_OF_READS {
-        unsafe {
-            _mm_clflush(above_page);
-            above_page.read_volatile();
-            _mm_clflush(below_page);
-            below_page.read_volatile();
-        }
-    }
-}
+const PATTERN: u16 = BLAST;
 
 fn init_row(row: &[Page], pattern: u16) {
     for page in row {
@@ -40,24 +28,6 @@ fn init_row(row: &[Page], pattern: u16) {
             }
         }
     }
-}
-
-/// Finds flipped (non-zero) bits in `row`.
-///
-/// # Returns
-fn find_flips(page: &Page) -> [u64; Consts::MAX_BITS] {
-    let mut flips = [0; Consts::MAX_BITS];
-    let base_ptr = page.virt_addr as *const u16;
-    for i in 0..Consts::PAGE_SIZE / 2 {
-        unsafe {
-            let ptr = base_ptr.add(i);
-            _mm_clflush(ptr as *const u8);
-            for bit in 0..size_of_val(&INIT_PATTERN) * 8 {
-                flips[bit] += (((*ptr >> bit) & 1) ^ ((INIT_PATTERN >> bit) & 1)) as u64;
-            }
-        }
-    }
-    flips
 }
 
 fn hammer_all_reachable_pages(
@@ -150,7 +120,7 @@ fn hammer_all_reachable_pages(
         for ((above_page, target_page), below_page) in
             above_row.into_iter().zip(&mut target_row).zip(below_row)
         {
-            let flips = find_flips(target_page);
+            let flips = find_flips(target_page, INIT_PATTERN);
             match target_page.data {
                 Some(ref mut data) => {
                     for (old_flip, new_flip) in data.flips.iter_mut().zip(flips) {

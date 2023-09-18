@@ -2,7 +2,9 @@
 #![allow(unused_variables)]
 
 use std::{
+    arch::x86_64::_mm_clflush,
     cell::RefCell,
+    mem::size_of_val,
     ops::{Range, RangeFull},
 };
 
@@ -19,6 +21,7 @@ pub(crate) struct Consts;
 impl Consts {
     pub(crate) const MAX_BITS: usize = 16;
     pub(crate) const PAGE_SIZE: usize = 0x1000;
+    pub(crate) const NO_OF_READS: u64 = 27 * 100 * 1000 * 4 / 4;
 }
 
 #[derive(Clone, Debug)]
@@ -201,13 +204,38 @@ pub(crate) fn get_phys_memory_size() -> u64 {
     sys.total_memory()
 }
 
+/// Finds flipped (non-zero) bits in `row`.
+///
+/// # Returns
+pub(crate) fn find_flips(page: &Page, initial_pattern: u16) -> [u64; Consts::MAX_BITS] {
+    let mut flips = [0; Consts::MAX_BITS];
+    let base_ptr = page.virt_addr as *const u16;
+    for i in 0..Consts::PAGE_SIZE / 2 {
+        unsafe {
+            let ptr = base_ptr.add(i);
+            _mm_clflush(ptr as *const u8);
+            for bit in 0..size_of_val(&initial_pattern) * 8 {
+                flips[bit] += (((*ptr >> bit) & 1) ^ ((initial_pattern >> bit) & 1)) as u64;
+            }
+        }
+    }
+    flips
+}
+
 pub(crate) unsafe fn fill_memory(victim_va: *mut u8, above_va: *mut u8, below_va: *mut u8) {
     unsafe {
         std::ptr::write_bytes(victim_va, 0x00, Consts::PAGE_SIZE);
     }
 
-    let lower_bits: u8 = 0x00;
-    let upper_bits: u8 = 0x01;
+    println!("Filling memory with 0x00 and 0x01...");
+    let lower_bits: u8 = 0xff;
+    let upper_bits: u8 = 0xff;
+
+    let above_va = if above_va as usize % (Consts::PAGE_SIZE * 2) == 0 {
+        above_va
+    } else {
+        above_va.sub(1)
+    };
 
     for index in 0..Consts::PAGE_SIZE {
         unsafe {
@@ -255,6 +283,17 @@ pub(crate) fn get_page_frame_number(
             Ok(mempage.get_page_frame_number().0)
         }
         PageInfo::SwapPage(_) => Err(procfs::ProcError::NotFound(None)),
+    }
+}
+
+pub(crate) fn rowhammer(above_page: *const u8, below_page: *const u8) {
+    for _ in 0..Consts::NO_OF_READS {
+        unsafe {
+            _mm_clflush(above_page);
+            above_page.read_volatile();
+            _mm_clflush(below_page);
+            below_page.read_volatile();
+        }
     }
 }
 
