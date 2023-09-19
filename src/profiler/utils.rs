@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use std::{
     arch::x86_64::_mm_clflush,
     cell::RefCell,
@@ -40,10 +37,8 @@ pub(crate) struct Page {
 
 #[derive(Debug, Clone)]
 pub(crate) struct PageData {
-    pub(crate) above_virt_addr: *mut u8,
-    pub(crate) above_pfn: u64,
-    pub(crate) below_virt_addr: *mut u8,
-    pub(crate) below_pfn: u64,
+    pub(crate) above_pfns: (u64, u64),
+    pub(crate) below_pfns: (u64, u64),
     pub(crate) flips: [u64; Consts::MAX_BITS],
 }
 
@@ -146,17 +141,19 @@ impl Page {
             }
             out <<= 1;
         }
-        out
+        out >> 1
     }
 }
 
 impl PageData {
-    pub(crate) fn new(above: &Page, below: &Page, flips: [u64; Consts::MAX_BITS]) -> Self {
+    pub(crate) fn new(
+        above_pfns: (u64, u64),
+        below_pfns: (u64, u64),
+        flips: [u64; Consts::MAX_BITS],
+    ) -> Self {
         Self {
-            above_virt_addr: above.virt_addr,
-            above_pfn: above.pfn,
-            below_virt_addr: below.virt_addr,
-            below_pfn: below.pfn,
+            above_pfns,
+            below_pfns,
             flips,
         }
     }
