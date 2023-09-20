@@ -2,6 +2,7 @@ use std::{mem::size_of_val, time::Instant};
 
 use memmap2::MmapMut;
 use procfs::ProcResult;
+use rand::seq::SliceRandom;
 
 use crate::{
     profiler::utils::{
@@ -105,11 +106,15 @@ fn hammer_all_reachable_pages(
 
     // Initializing loop variables
     let mut total_flips = 0;
-    let mut rows_tested = 0;
     let mut rows_skipped = 0;
-    let mut row_data = Vec::new();
+    let mut rows_tested = 0;
 
-    'main: for above_row_index in 0..pages_by_row.len() - 2 {
+    // Shuffle the row indices so we hammer the rows in a random order
+    let mut rng = rand::thread_rng();
+    let mut indices = (0..pages_by_row.len() - 2).collect::<Vec<_>>();
+    indices.shuffle(&mut rng);
+
+    'main: for above_row_index in indices {
         let target_row_index = above_row_index + 1;
         let below_row_index = above_row_index + 2;
 
@@ -204,7 +209,6 @@ fn hammer_all_reachable_pages(
                 );
             }
         }
-        row_data.push(target_row);
 
         let pages_tested = rows_tested * row_size / Consts::PAGE_SIZE;
         println!(
