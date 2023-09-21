@@ -72,7 +72,7 @@ pub(crate) fn select_command() {
 fn run_profiler() {
     let mut stdout = io::stdout();
 
-    println!("\t1. Run with default settings (-p 0.5 -c 4 -d 2 -b haswell)");
+    println!("\t1. Run with default settings (-p 0.5 -c 4 -d 2 -b haswell -o flips.out)");
     println!("\t2. Run with custom settings\n");
 
     print!("Select command (1-2): ");
@@ -82,7 +82,7 @@ fn run_profiler() {
         let input = read_line();
         match input.trim() {
             "1" => {
-                profiler::rowhammer::main(0.5, 4, 2, Bridge::Haswell);
+                profiler::rowhammer::main(0.5, 4, 2, Bridge::Haswell, "flips.out".to_string());
                 break;
             }
             "2" => {
@@ -130,7 +130,17 @@ fn run_profiler() {
                         _ => eprintln!("Input must be either 'haswell' or 'sandy'"),
                     }
                 };
-                profiler::rowhammer::main(fraction_of_phys_memory, cores, dimms, bridge);
+                let output = loop {
+                    print!("Output path: ");
+                    stdout.flush().unwrap();
+                    let input = read_line();
+                    if input.trim().is_empty() {
+                        eprintln!("Output file cannot be empty");
+                    } else {
+                        break input.trim().to_string();
+                    }
+                };
+                profiler::rowhammer::main(fraction_of_phys_memory, cores, dimms, bridge, output);
                 break;
             }
             _ => {

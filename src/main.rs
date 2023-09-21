@@ -30,6 +30,9 @@ struct ProfilerArgs {
     /// Which northbridge your CPU has (affects the DRAM mapping)
     #[arg(long, short, value_enum, default_value = "haswell")]
     bridge: Bridge,
+    /// Where to save the output
+    #[arg(long, short, default_value = "flips.out")]
+    output: String,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -49,6 +52,7 @@ fn main() {
                     args.cores,
                     args.dimms,
                     args.bridge,
+                    args.output,
                 );
             }
             Command::Evaluate(args) => {

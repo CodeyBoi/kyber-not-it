@@ -1,4 +1,5 @@
-use std::{mem::size_of_val, time::Instant};
+use std::io::Write;
+use std::{mem::size_of_val, path::Path, time::Instant};
 
 use memmap2::MmapMut;
 use procfs::ProcResult;
@@ -86,10 +87,14 @@ fn hammer_all_reachable_pages(
     _cores: u8,
     dimms: u8,
     bridge: Bridge,
+    output: impl AsRef<Path>,
 ) -> ProcResult<()> {
     let row_size = 128 * 1024 * dimms as usize;
 
+    let mut outfile = std::fs::File::create(output)?;
+
     println!("Collecting all pages in all rows...");
+
     let pages_by_row = collect_pages_by_row(mmap, row_size)?;
 
     // If we don't have at least 3 rows we can't hammer rows. The reason for not getting rows is probably
@@ -108,6 +113,14 @@ fn hammer_all_reachable_pages(
     let mut total_flips = 0;
     let mut rows_skipped = 0;
     let mut rows_tested = 0;
+
+    // Print header
+    let width = 12;
+    writeln!(
+        outfile,
+        "\t{:<width$}{:<width$}{:<width$}{:<width$}{:<width$}{:<7}{}",
+        "Page", "aPFN1", "aPFN2", "bPFN1", "bPFN2", "Flips", "Flipped bits"
+    )?;
 
     // Shuffle the row indices so we hammer the rows in a random order
     let mut rng = rand::thread_rng();
@@ -158,7 +171,7 @@ fn hammer_all_reachable_pages(
         rows_tested += 1;
 
         println!(
-            "Hammering row {} took {:.2?} seconds\n",
+            "Hammering row {} took {:.2?} seconds",
             target_row_index,
             before.elapsed(),
         );
@@ -187,17 +200,14 @@ fn hammer_all_reachable_pages(
             total_flips += flips.iter().sum::<u64>();
         }
 
-        let width = 12;
-        println!(
-            "\t{:<width$}{:<width$}{:<width$}{:<width$}{:<width$}{:<7}{}",
-            "Page", "aPFN1", "aPFN2", "bPFN1", "bPFN2", "Flips", "Flipped bits"
-        );
+        // Write the results to the output file
         for page in &target_row {
             let flips = page.data.as_ref().unwrap().flips;
             let flip_sum = flips.iter().sum::<u64>();
             if flip_sum > 0 {
                 let data = page.data.as_ref().unwrap();
-                println!(
+                writeln!(
+                    outfile,
                     ">\t{:<#width$x}{:<#width$x}{:<#width$x}{:<#width$x}{:<#width$x}{:<7}{:?}",
                     page.pfn,
                     data.above_pfns.0,
@@ -206,13 +216,13 @@ fn hammer_all_reachable_pages(
                     data.below_pfns.1,
                     flip_sum,
                     flips,
-                );
+                )?;
             }
         }
 
         let pages_tested = rows_tested * row_size / Consts::PAGE_SIZE;
         println!(
-            "\nSo far: {:.2} flips per page ({:.2} per row, {} flips total over {} pages tested)",
+            "So far: {:.2} flips per page ({:.2} per row, {} flips total over {} pages tested)",
             total_flips as f64 / pages_tested as f64,
             total_flips as f64 / rows_tested as f64,
             total_flips,
@@ -230,8 +240,14 @@ fn hammer_all_reachable_pages(
     Ok(())
 }
 
-pub(crate) fn main(fraction_of_phys_memory: f64, cores: u8, dimms: u8, bridge: Bridge) {
+pub(crate) fn main(
+    fraction_of_phys_memory: f64,
+    cores: u8,
+    dimms: u8,
+    bridge: Bridge,
+    output: impl AsRef<Path>,
+) {
     println!("Setting up memory mapping...");
     let mut mmap = setup_mapping(fraction_of_phys_memory);
-    hammer_all_reachable_pages(&mut mmap, cores, dimms, bridge).unwrap();
+    hammer_all_reachable_pages(&mut mmap, cores, dimms, bridge, output).unwrap();
 }
