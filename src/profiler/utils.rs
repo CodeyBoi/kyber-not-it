@@ -201,10 +201,34 @@ pub(crate) fn get_phys_memory_size() -> u64 {
     sys.total_memory()
 }
 
-/// Finds flipped (non-zero) bits in `row`.
+/// Finds flipped (non-zero) bits in `page`.
 ///
 /// # Returns
-pub(crate) fn find_flips(page: &Page, initial_pattern: u16) -> [u64; Consts::MAX_BITS] {
+/// A vector of tuples containing the index of the halfword (u16) and the index of the
+/// flipped bit in that halfword (0-15).
+pub(crate) fn find_flips(page: &Page, initial_pattern: u16) -> Vec<(usize, usize)> {
+    let mut flips = Vec::new();
+    let base_ptr = page.virt_addr as *const u16;
+    for i in 0..Consts::PAGE_SIZE / 2 {
+        unsafe {
+            let ptr = base_ptr.add(i);
+            _mm_clflush(ptr as *const u8);
+            for bit in 0..size_of_val(&initial_pattern) * 8 {
+                if (((*ptr >> bit) & 1) ^ ((initial_pattern >> bit) & 1)) == 1 {
+                    flips.push((i, bit));
+                }
+            }
+        }
+    }
+    flips
+}
+
+/// Counts the number of flipped bits in `page` by bit.
+///
+/// # Returns
+/// An array of length 16, where each index corresponds to the number of flipped bits
+/// in that bit position.
+pub(crate) fn count_flips_by_bit(page: &Page, initial_pattern: u16) -> [u64; Consts::MAX_BITS] {
     let mut flips = [0; Consts::MAX_BITS];
     let base_ptr = page.virt_addr as *const u16;
     for i in 0..Consts::PAGE_SIZE / 2 {

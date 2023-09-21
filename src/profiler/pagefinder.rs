@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::profiler::utils::{
-    collect_pages_by_row, fill_memory, find_flips, rowhammer, setup_mapping, Consts, Page,
+    collect_pages_by_row, count_flips_by_bit, fill_memory, rowhammer, setup_mapping, Consts, Page,
     PageData, Row,
 };
 
@@ -299,7 +299,7 @@ fn profile_candidate_pages(page_candidates: Vec<PageCandidate>) {
             }
             println!("Time: {:#?}", before.elapsed() / TEST_ITERATIONS);
 
-            let flips = find_flips(&target_page, 0x0);
+            let flips = count_flips_by_bit(&target_page, 0x0);
 
             score += PageCandidate::calculate_score(&flips);
             risk_score += calculate_risk_score(&flips);

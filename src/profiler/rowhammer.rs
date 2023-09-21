@@ -6,7 +6,7 @@ use rand::seq::SliceRandom;
 
 use crate::{
     profiler::utils::{
-        collect_pages_by_row, find_flips, rowhammer, setup_mapping, Consts, Page, PageData,
+        collect_pages_by_row, count_flips_by_bit, rowhammer, setup_mapping, Consts, Page, PageData,
     },
     Bridge,
 };
@@ -169,7 +169,7 @@ fn hammer_all_reachable_pages(
             let above_pages = find_pfns_in_same_bank(target_page, &above_row[..], bridge, dimms);
             let below_pages = find_pfns_in_same_bank(target_page, &below_row[..], bridge, dimms);
 
-            let flips = find_flips(target_page, INIT_PATTERN);
+            let flips = count_flips_by_bit(target_page, INIT_PATTERN);
             match target_page.data {
                 Some(ref mut data) => {
                     for (old_flip, new_flip) in data.flips.iter_mut().zip(flips) {
