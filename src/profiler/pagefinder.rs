@@ -132,7 +132,7 @@ fn output_page(page_candidate: &PageCandidate) -> io::Result<()> {
 
     path.push(format!(
         "data/V_{:#x}",
-        page_candidate.target_page.virt_addr as u64
+        page_candidate.target_page.pfn as u64
     ));
     path.set_extension("out");
     println!("PATH: {:#?}", path);
@@ -146,10 +146,17 @@ fn output_page(page_candidate: &PageCandidate) -> io::Result<()> {
         .expect("Flips should be defined at this stage")
         .flips;
 
-    file.write_all("\tPFN\taPFN1\taPFN2\tbPFN1\tbPFN2\tScore\tFlipped bits\n".as_bytes())?;
+    let width = 12;
     file.write_all(
         format!(
-            ">\t{:#x}\t{:#x}\t{:#x}\t{:#x}\t{:#x}\t{}\t{:?}\n",
+            "\t{:<width$}{:<width$}{:<width$}{:<width$}{:<width$}{:<7}{}\n",
+            "Page", "aPFN1", "aPFN2", "bPFN1", "bPFN2", "Score", "Flipped bits"
+        )
+        .as_bytes(),
+    )?;
+    file.write_all(
+        format!(
+            ">\t{:<#width$x}{:<#width$x}{:<#width$x}{:<#width$x}{:<#width$x}{:<7}{:?}",
             page_candidate.target_page.pfn,
             page_candidate.above_pages.0.pfn,
             page_candidate.above_pages.1.pfn,
@@ -175,7 +182,7 @@ fn get_candidate_pages(pages_by_row: &Vec<Row>) -> Result<Vec<PageCandidate>, &'
     let file = File::open(path).expect("Failed to open file {path}");
 
     let lines = io::BufReader::new(file).lines();
-    let start = std::time::Instant::now();
+    //let start = std::time::Instant::now();
 
     for line in lines {
         if let Ok(s) = line {
@@ -232,7 +239,7 @@ fn get_candidate_pages(pages_by_row: &Vec<Row>) -> Result<Vec<PageCandidate>, &'
             let (target_pfn, above_pfns, below_pfns) =
                 (pfns[0], (pfns[1], pfns[2]), (pfns[3], pfns[4]));
 
-            println!("Target_page: {:#x?} for candidate evaluation", target_pfn);
+            //println!("Target_page: {:#x?} for candidate evaluation", target_pfn);
 
             // Save the values of flips in an array
             let mut flips_arr = [0; Consts::MAX_BITS];
@@ -241,22 +248,10 @@ fn get_candidate_pages(pages_by_row: &Vec<Row>) -> Result<Vec<PageCandidate>, &'
             }
 
             let page_candidate =
-                setup_page_candidate(pages_by_row, target_pfn, above_pfns, below_pfns, flips_arr);
-            match page_candidate {
-                Ok(page_candidate) => {
-                    page_candidates.push(page_candidate);
-                }
-                Err(e) => {
-                    println!("Error: {:#?}", e);
-                    continue;
-                }
-            }
-        }
-    }
-    println!("Time: {:#?}", start.elapsed());
+                setup_page_candidate(pages_by_row, target_pfn, above_pfns, below_pfns, flips_arr)?;
 
-    if page_candidates.is_empty() {
-        return Err("No candidate pages found");
+            page_candidates.push(page_candidate);
+        }
     }
 
     Ok(page_candidates)
@@ -265,7 +260,7 @@ fn get_candidate_pages(pages_by_row: &Vec<Row>) -> Result<Vec<PageCandidate>, &'
 fn profile_candidate_pages(page_candidates: Vec<PageCandidate>) {
     println!("Profiling {} Page Candidates", page_candidates.len());
 
-    for mut candidate in page_candidates {
+    'candidate_loop: for mut candidate in page_candidates {
         println!("Testing candidate: {:#?}", candidate.target_page.pfn);
 
         let target_page = &candidate.target_page;
@@ -304,7 +299,15 @@ fn profile_candidate_pages(page_candidates: Vec<PageCandidate>) {
             score += PageCandidate::calculate_score(&flips);
             risk_score += calculate_risk_score(&flips);
 
-            println!("Flips: {:#?}", flips);
+            if risk_score > RISK_THRESHOLD {
+                println!(
+                    "Risk score too high, skipping candidate {:#?}",
+                    candidate.target_page.pfn
+                );
+                continue 'candidate_loop;
+            }
+
+            println!("Flips: {:?}", flips);
             for index in 0..hammer_flips.len() {
                 hammer_flips[index] += flips[index];
             }
@@ -322,15 +325,15 @@ fn profile_candidate_pages(page_candidates: Vec<PageCandidate>) {
             candidate.score, risk_score
         );
 
-        if risk_score <= RISK_THRESHOLD {
-            println!("Good page found: {:#?}", &candidate.target_page.pfn);
+        if candidate.score > 100 {
+            println!("Good page found: {:#?}", candidate.target_page.pfn);
             output_page(&candidate).expect("Failed to output page");
         }
     }
 }
 
 pub(crate) fn main(dimms: u8) {
-    let mut fraction_of_phys_memory = 0.5;
+    let mut fraction_of_phys_memory = 0.0;
     let row_size = 128 * 1024 * dimms as usize;
     let mut mmap = setup_mapping(0.0);
 
@@ -345,6 +348,8 @@ pub(crate) fn main(dimms: u8) {
             "Setting up memory mapping with {} of physical memory",
             fraction_of_phys_memory
         );
+
+        // Drop the old mapping in order to create a new one
         std::mem::drop(mmap);
         mmap = setup_mapping(fraction_of_phys_memory);
 
@@ -369,19 +374,10 @@ pub(crate) fn main(dimms: u8) {
         let candidates = match candidates {
             Ok(candidates) => candidates,
             Err(e) => {
-                println!("Couldn't find candidate pages, got {:#?}", e);
+                println!("Couldn't find all candidate pages, got {:#?}", e);
                 continue;
             }
         };
-
-        if candidates.len() < 30 {
-            println!(
-                "Not enough candidates, got {} at frac: {}",
-                candidates.len(),
-                fraction_of_phys_memory
-            );
-            continue;
-        }
 
         break Some((pages_by_row, candidates));
     };

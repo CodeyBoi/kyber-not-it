@@ -18,7 +18,7 @@ pub(crate) struct Consts;
 impl Consts {
     pub(crate) const MAX_BITS: usize = 16;
     pub(crate) const PAGE_SIZE: usize = 0x1000;
-    pub(crate) const NO_OF_READS: u64 = 27 * 100 * 1000 * 4 / 4;
+    pub(crate) const NO_OF_READS: u64 = 27 * 100 * 1000 * 4;
 }
 
 #[derive(Clone, Debug)]
@@ -248,30 +248,18 @@ pub(crate) unsafe fn fill_memory(victim_va: *mut u8, above_va: *mut u8, below_va
         std::ptr::write_bytes(victim_va, 0x00, Consts::PAGE_SIZE);
     }
 
-    println!("Filling memory with 0x00 and 0x01...");
-    let lower_bits: u8 = 0xff;
-    let upper_bits: u8 = 0xff;
+    let above_va = above_va as *mut u16;
+    let below_va = below_va as *mut u16;
 
-    let above_va = if above_va as usize % (Consts::PAGE_SIZE * 2) == 0 {
-        above_va
-    } else {
-        above_va.sub(1)
-    };
+    let pattern = 0x0100;
 
-    for index in 0..Consts::PAGE_SIZE {
+    for index in 0..Consts::PAGE_SIZE / 2 {
         unsafe {
-            let above_byte = above_va.add(index);
-            let below_byte = below_va.add(index);
+            let above = above_va.add(index);
+            let below = below_va.add(index);
 
-            if index % 2 == 0 {
-                // Set the bytes at aboveVA and belowVA to lowerBits
-                *above_byte = lower_bits;
-                *below_byte = lower_bits;
-            } else {
-                // Set the bytes at aboveVA and belowVA to upperBits
-                *above_byte = upper_bits;
-                *below_byte = upper_bits;
-            }
+            *above = pattern;
+            *below = pattern;
         }
     }
 }
