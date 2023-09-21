@@ -18,7 +18,7 @@ pub(crate) struct Consts;
 impl Consts {
     pub(crate) const MAX_BITS: usize = 16;
     pub(crate) const PAGE_SIZE: usize = 0x1000;
-    pub(crate) const NO_OF_READS: u64 = 27 * 100 * 1000 * 4;
+    pub(crate) const NO_OF_READS: u64 = 27 * 100 * 1000;
 }
 
 #[derive(Clone, Debug)]
