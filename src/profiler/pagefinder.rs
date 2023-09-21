@@ -1,6 +1,7 @@
 use std::{
     fs::{create_dir, File},
-    io::{self, BufRead, Write},
+    io::{self, BufRead, BufReader, Write},
+    path::Path,
     thread,
     time::{self, Instant},
 };
@@ -12,6 +13,8 @@ use crate::profiler::utils::{
 
 const TEST_ITERATIONS: u32 = 10;
 const RISK_THRESHOLD: u32 = 0;
+const SCORE_THRESHOLD: u32 = 3;
+const CANDIDATES_THRESHOLD: f64 = 0.9;
 
 pub(crate) struct PageCandidate {
     target_page: Page,
@@ -59,22 +62,12 @@ fn calculate_risk_score(flips: &[u64]) -> u32 {
     risk_score as u32
 }
 
-/// Print the number of 256 flips on the PageCandidate
-fn count_256_flip(page: &Page) {
-    let target_flips = page.data.as_ref().unwrap().flips;
-
-    println!(
-        "Target Page {:#x?} has {} 256 flips",
-        page.pfn, target_flips[8]
-    );
-}
-
 fn find_page(pages: &[Page], page_nbr: u64) -> Option<&Page> {
     pages.iter().find(|page| page.pfn == page_nbr)
 }
 
 fn setup_page_candidate(
-    pages_by_row: &Vec<Row>,
+    pages_by_row: &[Row],
     pfn: u64,
     above_pfns: (u64, u64),
     below_pfns: (u64, u64),
@@ -171,96 +164,83 @@ fn output_page(page_candidate: &PageCandidate) -> io::Result<()> {
     Ok(())
 }
 
-/// Read the flips.txt file and return a vector of potential exploitable pages
-fn get_candidate_pages(pages_by_row: &Vec<Row>) -> Result<Vec<PageCandidate>, &'static str> {
-    let mut page_candidates = Vec::new();
+fn get_candidate_pfns(input: impl AsRef<Path>) -> Vec<(u64, (u64, u64), (u64, u64))> {
+    let mut pfns = Vec::new();
+    let file = File::open(input).expect("Failed to open file {path}");
 
-    let mut path = std::env::current_dir().unwrap();
-    let file_name = "flips.out";
-    path.push(file_name);
-
-    let file = File::open(path).expect("Failed to open file {path}");
-
-    let lines = io::BufReader::new(file).lines();
-    //let start = std::time::Instant::now();
-
-    for line in lines {
-        if let Ok(s) = line {
-            // Dont read line unless it starts with '>'
-            if !s.starts_with(">") {
-                continue;
-            }
-
-            let str = s.as_str();
-
-            let start_flips = str.find("[").unwrap();
-            let end_flips = str.find("]").unwrap_or(str.len());
-
-            let flips = &str[start_flips + 1..end_flips];
-            let flips = flips
-                .split(",")
-                .map(|s| {
-                    s.trim()
-                        .parse::<u64>()
-                        .expect("Invalid format when parsing flip array")
-                })
-                .collect::<Vec<_>>();
-
-            let good_sum = flips[8];
-            let risk_sum = flips[9..]
-                .iter()
-                .enumerate()
-                .fold(0, |acc, (i, bit)| acc + i as u64 * bit);
-
-            let split_line = str[1..].split_whitespace().collect::<Vec<_>>();
-
-            if risk_sum > 0 || good_sum < 3 {
-                //println!(
-                //    "Skipping Page {}, got risk: {}, and 256 flips {}",
-                //    split_line[0], risk_sum, good_sum
-                //);
-                continue;
-            }
-
-            let pfns = split_line[..5]
-                .iter()
-                .map(|s| {
-                    u64::from_str_radix(
-                        match s.strip_prefix("0x") {
-                            Some(s) => s,
-                            None => s,
-                        },
-                        16,
-                    )
-                    .expect("Failed to parse hexstring in input file to u64")
-                })
-                .collect::<Vec<_>>();
-
-            let (target_pfn, above_pfns, below_pfns) =
-                (pfns[0], (pfns[1], pfns[2]), (pfns[3], pfns[4]));
-
-            //println!("Target_page: {:#x?} for candidate evaluation", target_pfn);
-
-            // Save the values of flips in an array
-            let mut flips_arr = [0; Consts::MAX_BITS];
-            for (i, flip) in flips.iter().enumerate() {
-                flips_arr[i] = *flip;
-            }
-
-            let page_candidate =
-                setup_page_candidate(pages_by_row, target_pfn, above_pfns, below_pfns, flips_arr)?;
-
-            page_candidates.push(page_candidate);
+    for line in BufReader::new(file).lines() {
+        let line = line.expect("Error when reading line in file");
+        // If line doesn't start with '>' it doesn't contain any data
+        if !line.starts_with(">") {
+            continue;
         }
-    }
 
-    Ok(page_candidates)
+        let start_flips = line.find("[").unwrap();
+        let end_flips = line.find("]").unwrap_or(line.len());
+        let flips = &line[start_flips + 1..end_flips]
+            .split(",")
+            .map(|s| {
+                s.trim()
+                    .parse::<u64>()
+                    .expect("Invalid format when parsing flip array")
+            })
+            .collect::<Vec<_>>();
+
+        let score = flips[8];
+        let risk_score: u64 = flips[9..].iter().sum();
+
+        // Skip pages with low score or high risk score
+        if score < SCORE_THRESHOLD as u64 || risk_score > RISK_THRESHOLD as u64 {
+            continue;
+        }
+
+        // First 5 values (after skipping the initial '>') are the PFNs
+        let p = line[1..]
+            .split_whitespace()
+            .take(5)
+            .map(|s| {
+                u64::from_str_radix(
+                    match s.strip_prefix("0x") {
+                        Some(s) => s,
+                        None => s,
+                    },
+                    16,
+                )
+                .expect("Failed to parse hexstring in input file to u64")
+            })
+            .collect::<Vec<_>>();
+
+        pfns.push((p[0], (p[1], p[2]), (p[3], p[4])));
+    }
+    pfns
 }
 
-fn profile_candidate_pages(page_candidates: Vec<PageCandidate>) {
+/// Read the flips.out file and return a vector of potential exploitable pages
+fn get_candidate_pages(
+    pages_by_row: &[Row],
+    candidate_pfns: &[(u64, (u64, u64), (u64, u64))],
+) -> Vec<PageCandidate> {
+    candidate_pfns
+        .iter()
+        .filter_map(|(pfn, above_pfns, below_pfns)| {
+            match setup_page_candidate(
+                pages_by_row,
+                *pfn,
+                *above_pfns,
+                *below_pfns,
+                [0; Consts::MAX_BITS],
+            ) {
+                Ok(page_candidate) => Some(page_candidate),
+                Err(_) => None,
+            }
+        })
+        .collect()
+}
+
+fn profile_candidate_pages(page_candidates: &mut [PageCandidate]) {
     println!("Profiling {} Page Candidates", page_candidates.len());
 
-    'candidate_loop: for mut candidate in page_candidates {
+    'candidate_loop: for candidate in page_candidates {
         println!("Testing candidate: {:#?}", candidate.target_page.pfn);
 
         let target_page = &candidate.target_page;
@@ -336,11 +316,12 @@ pub(crate) fn main(dimms: u8) {
     let mut fraction_of_phys_memory = 0.0;
     let row_size = 128 * 1024 * dimms as usize;
     let mut mmap = setup_mapping(0.0);
+    let candidate_pfns = get_candidate_pfns("flips.out");
 
     let result = loop {
         fraction_of_phys_memory += 0.1;
 
-        if fraction_of_phys_memory > 0.9 {
+        if fraction_of_phys_memory > 0.95 {
             break None;
         }
 
@@ -370,20 +351,22 @@ pub(crate) fn main(dimms: u8) {
         };
 
         println!("Finding candidate pages...");
-        let candidates = get_candidate_pages(&pages_by_row);
-        let candidates = match candidates {
-            Ok(candidates) => candidates,
-            Err(e) => {
-                println!("Couldn't find all candidate pages, got {:#?}", e);
-                continue;
-            }
-        };
+        let candidates = get_candidate_pages(&pages_by_row, &candidate_pfns);
 
-        break Some((pages_by_row, candidates));
+        if (candidates.len() as f64 / candidate_pfns.len() as f64) < CANDIDATES_THRESHOLD {
+            println!(
+                "Not enough candidates found, got {}/{}",
+                candidates.len(),
+                candidate_pfns.len(),
+            );
+            continue;
+        }
+
+        break Some(candidates);
     };
 
-    let candidates = match result {
-        Some((pages_by_row, mut candidates)) => {
+    let mut candidates = match result {
+        Some(mut candidates) => {
             println!(
                 "Found {} candidates at frac: {}",
                 candidates.len(),
@@ -399,5 +382,5 @@ pub(crate) fn main(dimms: u8) {
         }
     };
 
-    profile_candidate_pages(candidates);
+    profile_candidate_pages(&mut candidates);
 }
