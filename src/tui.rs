@@ -6,7 +6,7 @@ use std::{
 
 use rand::Rng;
 
-use crate::{profiler, Bridge};
+use crate::{attack, attack_tester, profiler, Bridge};
 
 fn read_line() -> String {
     let mut input = String::new();
@@ -44,21 +44,22 @@ pub(crate) fn select_command() {
                 break;
             }
             "3" => {
-                let mut rng = rand::thread_rng();
-                let mut progress = 0;
-                while progress < 100 {
-                    print!("\rRunning attack ({}%)", progress);
-                    stdout.flush().unwrap();
-                    let sleep = rng.gen_range(0..50);
-                    thread::sleep(Duration::from_millis(sleep));
-                    progress += rng.gen_range(0..=2);
-                }
-                println!("\rRunning attack (done!)");
+                run_attack();
+                //let mut rng = rand::thread_rng();
+                //let mut progress = 0;
+                //while progress < 100 {
+                //    print!("\rRunning attack ({}%)", progress);
+                //    stdout.flush().unwrap();
+                //    let sleep = rng.gen_range(0..50);
+                //    thread::sleep(Duration::from_millis(sleep));
+                //    progress += rng.gen_range(0..=2);
+                //}
+                //println!("\rRunning attack (done!)");
                 println!("\n*** CRACKED KYBER! MASTER THESIS COMPLETE! ***\n");
                 break;
             }
             "4" => {
-                println!("Bye!");
+                attack_tester::tester::main();
                 break;
             }
             _ => {
@@ -131,7 +132,7 @@ fn run_profiler() {
                     }
                 };
                 let output = loop {
-                    print!("Output path: ");
+                    print!("Output file: ");
                     stdout.flush().unwrap();
                     let input = read_line();
                     if input.trim().is_empty() {
@@ -179,6 +180,60 @@ fn run_evaluation() {
                     }
                 };
                 profiler::pagefinder::main(dimms);
+                break;
+            }
+            _ => {
+                print!("Please enter a valid command (1-2): ");
+                stdout.flush().unwrap();
+            }
+        }
+    }
+}
+
+fn run_attack() {
+    let mut stdout = io::stdout();
+
+    println!("\t1. Run with default settings (-p 0.5, no testing)");
+    println!("\t2. Run with custom settings\n");
+
+    print!("Select command (1-2): ");
+    stdout.flush().unwrap();
+
+    loop {
+        let input = read_line();
+        match input.trim() {
+            "1" => {
+                attack::attack::main(0.5, false);
+                break;
+            }
+            "2" => {
+                let fraction_of_phys_memory: f64 = loop {
+                    print!("Fraction of physical memory to profile (0.0-1.0): ");
+                    stdout.flush().unwrap();
+                    let input = read_line();
+                    if let Ok(f) = input.trim().parse() {
+                        if f >= 0.0 && f <= 1.0 {
+                            break f;
+                        } else {
+                            eprintln!("Value must be in the range 0.0-1.0");
+                        }
+                    } else {
+                        eprintln!("Input must be a valid float number");
+                    }
+                };
+
+                let testing: bool = loop {
+                    print!("Testing mode (true/false, t/f): ");
+                    stdout.flush().unwrap();
+                    let input = read_line();
+                    match input.trim() {
+                        "true" | "t" => break true,
+                        "false" | "f" => break false,
+                        _ => eprintln!("Input must be either 'true, t' or 'false, f'"),
+                    }
+                };
+
+                attack::attack::main(fraction_of_phys_memory, testing);
                 break;
             }
             _ => {

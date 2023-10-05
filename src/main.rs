@@ -1,3 +1,5 @@
+mod attack;
+mod attack_tester;
 mod profiler;
 mod tui;
 
@@ -14,6 +16,7 @@ enum Command {
     /// Profiles bit flip locations and suitable pages for a rowhammer attack
     Profile(ProfilerArgs),
     Evaluate(ProfilerArgs),
+    Attack(AttackArgs),
 }
 
 #[derive(Args, Debug)]
@@ -30,9 +33,17 @@ struct ProfilerArgs {
     /// Which northbridge your CPU has (affects the DRAM mapping)
     #[arg(long, short, value_enum, default_value = "haswell")]
     bridge: Bridge,
-    /// Where to save the output
+    /// File used to save the output
     #[arg(long, short, default_value = "flips.out")]
     output: String,
+}
+
+#[derive(Args, Debug)]
+struct AttackArgs {
+    #[arg(long, short = 'p', default_value_t = 0.5)]
+    fraction_of_phys_memory: f64,
+    #[arg(long, short, action)]
+    testing: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -57,6 +68,9 @@ fn main() {
             }
             Command::Evaluate(args) => {
                 profiler::pagefinder::main(args.dimms);
+            }
+            Command::Attack(args) => {
+                attack::attack::main(args.fraction_of_phys_memory, args.testing);
             }
         },
     }

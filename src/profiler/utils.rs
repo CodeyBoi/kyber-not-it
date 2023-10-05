@@ -141,7 +141,7 @@ impl Page {
             }
             out <<= 1;
         }
-        out
+        out >> 1
     }
 }
 

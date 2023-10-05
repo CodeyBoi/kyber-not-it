@@ -17,11 +17,11 @@ const SCORE_THRESHOLD: u32 = 3;
 const CANDIDATES_THRESHOLD: f64 = 0.9;
 
 pub(crate) struct PageCandidate {
-    target_page: Page,
-    above_pages: (Page, Page),
-    below_pages: (Page, Page),
+    pub(crate) target_page: Page,
+    pub(crate) above_pages: (Page, Page),
+    pub(crate) below_pages: (Page, Page),
 
-    score: u32,
+    pub(crate) score: u32,
 }
 
 impl PageCandidate {
@@ -112,7 +112,7 @@ fn setup_page_candidate(
         return Ok(page_candidate);
     }
 
-    Err("Could not find page candidate in current mapping, remapping!!!")
+    Err("Pages not found in mapping")
 }
 
 /// Output the PageCandidate to a file
@@ -164,9 +164,9 @@ fn output_page(page_candidate: &PageCandidate) -> io::Result<()> {
     Ok(())
 }
 
-fn get_candidate_pfns(input: impl AsRef<Path>) -> Vec<(u64, (u64, u64), (u64, u64))> {
+fn get_candidate_pfns(input_path: impl AsRef<Path>) -> Vec<(u64, (u64, u64), (u64, u64))> {
     let mut pfns = Vec::new();
-    let file = File::open(input).expect("Failed to open file {path}");
+    let file = File::open(input_path).expect("Failed to open file {path}");
 
     for line in BufReader::new(file).lines() {
         let line = line.expect("Error when reading line in file");
@@ -300,6 +300,7 @@ fn profile_candidate_pages(page_candidates: &mut [PageCandidate]) {
         candidate.target_page.data.as_mut().unwrap().flips = hammer_flips;
 
         candidate.score = score;
+
         println!(
             "Candidate got score: {:#?}, risk score: {:#?}",
             candidate.score, risk_score
@@ -318,6 +319,7 @@ pub(crate) fn main(dimms: u8) {
     let mut mmap = setup_mapping(0.0);
     let candidate_pfns = get_candidate_pfns("flips.out");
 
+    println!("number of pfns in flips.out: {}", candidate_pfns.len());
     let result = loop {
         fraction_of_phys_memory += 0.1;
 
