@@ -1,5 +1,9 @@
 use std::io::Write;
-use std::{mem::size_of_val, path::Path, time::Instant};
+use std::{
+    mem::size_of_val,
+    path::Path,
+    time::{Duration, Instant},
+};
 
 use memmap2::MmapMut;
 use procfs::ProcResult;
@@ -168,6 +172,24 @@ fn hammer_all_reachable_pages(
                 _ => continue,
             }
         }
+
+        if before.elapsed() < Duration::from_secs(7) {
+            println!(
+                "[!] Hammering row {} took less than 7 seconds, skipping...",
+                target_row_index
+            );
+            rows_skipped += 1;
+
+            for (above, below) in above_pages_by_bank
+                .iter()
+                .map(|p| p.first())
+                .zip(below_pages_by_bank.iter().map(|p| p.first()))
+            {
+                println!("ERROR:\nAbove: {:?},\nBelow: {:?}", above, below);
+            }
+            continue 'main;
+        }
+
         rows_tested += 1;
 
         println!(
