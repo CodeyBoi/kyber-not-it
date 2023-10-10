@@ -1,4 +1,6 @@
-use std::io::Write;
+use std::collections::HashSet;
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
 use std::{
     mem::size_of_val,
     path::Path,
@@ -95,7 +97,7 @@ fn hammer_all_reachable_pages(
 ) -> ProcResult<()> {
     let row_size = 128 * 1024 * dimms as usize;
 
-    let mut outfile = std::fs::File::create(output)?;
+    // let mut outfile = std::fs::File::create(output)?;
 
     println!("Collecting all pages in all rows...");
 
@@ -116,7 +118,30 @@ fn hammer_all_reachable_pages(
     // Initializing loop variables
     let mut total_flips = 0;
     let mut rows_skipped = 0;
-    let mut rows_tested = 0;
+    let mut tested_rows = HashSet::new();
+
+    if let Ok(indata) = File::open(&output) {
+        let reader = BufReader::new(indata);
+        for line in reader.lines() {
+            let line = line.unwrap();
+            if line.starts_with("Hammering row ") {
+                let row_index = line
+                    .split_whitespace()
+                    .nth(2)
+                    .unwrap()
+                    .trim()
+                    .parse::<usize>()
+                    .unwrap();
+                tested_rows.insert(row_index);
+            }
+        }
+    }
+
+    let mut outfile = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&output)
+        .expect("Couldn't open output file");
 
     // Print header
     let width = 12;
@@ -134,6 +159,12 @@ fn hammer_all_reachable_pages(
     'main: for above_row_index in indices {
         let target_row_index = above_row_index + 1;
         let below_row_index = above_row_index + 2;
+
+        if tested_rows.contains(&target_row_index) {
+            println!("[!] Row {} already tested, skipping...", target_row_index);
+            rows_skipped += 1;
+            continue;
+        }
 
         let above_row = &pages_by_row[above_row_index];
         let target_row = &pages_by_row[target_row_index];
@@ -190,7 +221,7 @@ fn hammer_all_reachable_pages(
             continue 'main;
         }
 
-        rows_tested += 1;
+        tested_rows.insert(target_row_index);
 
         println!(
             "Hammering row {} took {:.2?} seconds",
@@ -242,19 +273,19 @@ fn hammer_all_reachable_pages(
             }
         }
 
-        let pages_tested = rows_tested * row_size / Consts::PAGE_SIZE;
+        let pages_tested = tested_rows.len() * row_size / Consts::PAGE_SIZE;
         println!(
             "So far: {:.2} flips per page ({:.2} per row, {} flips total over {} pages tested)",
             total_flips as f64 / pages_tested as f64,
-            total_flips as f64 / rows_tested as f64,
+            total_flips as f64 / tested_rows.len() as f64,
             total_flips,
             pages_tested,
         );
-        let rows_analyzed = rows_tested + rows_skipped;
+        let rows_analyzed = tested_rows.len() + rows_skipped;
         println!(
             "        {:.2}% of allocated memory analyzed ({:.2}% tested, {:.2}% skipped)\n",
             rows_analyzed as f64 * 100.0 / pages_by_row.len() as f64,
-            rows_tested as f64 / rows_analyzed as f64 * 100.0,
+            tested_rows.len() as f64 / rows_analyzed as f64 * 100.0,
             rows_skipped as f64 / rows_analyzed as f64 * 100.0,
         )
     }
