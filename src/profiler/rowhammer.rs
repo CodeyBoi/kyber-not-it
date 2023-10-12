@@ -99,6 +99,8 @@ fn hammer_all_reachable_pages(
 
     // let mut outfile = std::fs::File::create(output)?;
 
+    let data_file = Path::new("std.out");
+
     println!("Collecting all pages in all rows...");
 
     let pages_by_row = collect_pages_by_row(mmap, row_size)?;
@@ -120,7 +122,7 @@ fn hammer_all_reachable_pages(
     let mut rows_skipped = 0;
     let mut tested_rows = HashSet::new();
 
-    if let Ok(indata) = File::open(&output) {
+    if let Ok(indata) = File::open(&data_file) {
         let reader = BufReader::new(indata);
         for line in reader.lines() {
             let line = line.unwrap();
@@ -136,6 +138,12 @@ fn hammer_all_reachable_pages(
             }
         }
     }
+
+    let mut status_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&data_file)
+        .expect("Couldn't open data file");
 
     let mut outfile = OpenOptions::new()
         .create(true)
@@ -206,7 +214,7 @@ fn hammer_all_reachable_pages(
 
         if before.elapsed() < Duration::from_secs(7) {
             println!(
-                "[!] Hammering row {} took less than 7 seconds, skipping...",
+                "[!] Hammering row {} took less than 7 seconds, skipping...\n",
                 target_row_index
             );
             rows_skipped += 1;
@@ -223,11 +231,12 @@ fn hammer_all_reachable_pages(
 
         tested_rows.insert(target_row_index);
 
-        println!(
+        writeln!(
+            status_file,
             "Hammering row {} took {:.2?} seconds",
             target_row_index,
             before.elapsed(),
-        );
+        )?;
 
         // Count the number of flipped bits in the target row after each test and sets which are above and below pages
         let mut target_row = target_row.clone();
@@ -274,22 +283,24 @@ fn hammer_all_reachable_pages(
         }
 
         let pages_tested = tested_rows.len() * row_size / Consts::PAGE_SIZE;
-        println!(
+        writeln!(
+            status_file,
             "So far: {:.2} flips per page ({:.2} per row, {} flips total over {} pages tested)",
             total_flips as f64 / pages_tested as f64,
             total_flips as f64 / tested_rows.len() as f64,
             total_flips,
             pages_tested,
-        );
+        )?;
         let rows_analyzed = tested_rows.len() + rows_skipped;
-        println!(
+        writeln!(
+            status_file,
             "        {:.2}% of allocated memory analyzed ({:.2}% tested, {:.2}% skipped)\n",
             rows_analyzed as f64 * 100.0 / pages_by_row.len() as f64,
             tested_rows.len() as f64 / rows_analyzed as f64 * 100.0,
             rows_skipped as f64 / rows_analyzed as f64 * 100.0,
-        )
+        )?;
     }
-    println!("Done!");
+    writeln!(status_file, "Done!")?;
     Ok(())
 }
 
