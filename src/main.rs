@@ -70,7 +70,8 @@ fn main() {
                 profiler::pagefinder::main(args.dimms);
             }
             Command::Attack(args) => {
-                attack::attack::main(args.fraction_of_phys_memory, args.testing);
+                //attack::attack::main(args.fraction_of_phys_memory, args.testing);
+                attack::degrade::main();
             }
         },
     }

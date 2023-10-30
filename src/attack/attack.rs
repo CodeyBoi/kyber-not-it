@@ -170,7 +170,7 @@ pub(crate) fn main(fraction_of_phys_memory: f64, testing: bool) {
         hammer = false;
     }
 
-    let pagemap = setup_mapping(fraction_of_phys_memory);
+    //let pagemap = setup_mapping(fraction_of_phys_memory);
 
     //rowhammer_attack(hammer, pages);
 
