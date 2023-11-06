@@ -1,12 +1,6 @@
-use std::{
-    io::{self, Write},
-    thread,
-    time::Duration,
-};
+use std::io::{self, Write};
 
-use rand::Rng;
-
-use crate::{attack, attack_tester, profiler, Bridge};
+use crate::{attack, attack_tester, profiler, Bridge, ProfilerArgs};
 
 fn read_line() -> String {
     let mut input = String::new();
@@ -73,7 +67,11 @@ pub(crate) fn select_command() {
 fn run_profiler() {
     let mut stdout = io::stdout();
 
-    println!("\t1. Run with default settings (-p 0.5 -c 4 -d 2 -b haswell -o flips.out)");
+    let mut opts = ProfilerArgs::default();
+    println!(
+        "\t1. Run with default settings (-p {} -c {} -d {} -b {:?} -o {})",
+        opts.fraction_of_phys_memory, opts.cores, opts.dimms, opts.bridge, opts.output
+    );
     println!("\t2. Run with custom settings\n");
 
     print!("Select command (1-2): ");
@@ -83,14 +81,26 @@ fn run_profiler() {
         let input = read_line();
         match input.trim() {
             "1" => {
-                profiler::rowhammer::main(0.5, 4, 2, Bridge::Haswell, "flips.out".to_string());
+                profiler::rowhammer::main(
+                    opts.fraction_of_phys_memory,
+                    opts.cores,
+                    opts.dimms,
+                    opts.bridge,
+                    opts.output,
+                );
                 break;
             }
             "2" => {
-                let fraction_of_phys_memory: f64 = loop {
-                    print!("Fraction of physical memory to profile (0.0-1.0): ");
+                opts.fraction_of_phys_memory = loop {
+                    print!(
+                        "Fraction of physical memory to profile ({:.1}): ",
+                        opts.fraction_of_phys_memory
+                    );
                     stdout.flush().unwrap();
                     let input = read_line();
+                    if input.trim().is_empty() {
+                        break opts.fraction_of_phys_memory;
+                    }
                     if let Ok(f) = input.trim().parse() {
                         if f >= 0.0 && f <= 1.0 {
                             break f;
@@ -101,47 +111,66 @@ fn run_profiler() {
                         eprintln!("Input must be a valid float number");
                     }
                 };
-                let cores: u8 = loop {
-                    print!("Number of cores on target machine: ");
+                opts.cores = loop {
+                    print!("Number of cores on target machine ({}): ", opts.cores);
                     stdout.flush().unwrap();
                     let input = read_line();
+                    if input.trim().is_empty() {
+                        break opts.cores;
+                    }
                     if let Ok(c) = input.trim().parse() {
                         break c;
                     } else {
                         eprintln!("Input must be an integer");
                     }
                 };
-                let dimms: u8 = loop {
-                    print!("Number of RAM sticks on target machine: ");
+                opts.dimms = loop {
+                    print!("Number of RAM sticks on target machine ({}): ", opts.dimms);
                     stdout.flush().unwrap();
                     let input = read_line();
+                    if input.trim().is_empty() {
+                        break opts.dimms;
+                    }
                     if let Ok(d) = input.trim().parse() {
                         break d;
                     } else {
                         eprintln!("Input must be an integer");
                     }
                 };
-                let bridge = loop {
-                    print!("Northbridge type (haswell/sandy): ");
+                opts.bridge = loop {
+                    print!("Northbridge type ({:?}): ", opts.bridge);
                     stdout.flush().unwrap();
                     let input = read_line();
+                    if input.trim().is_empty() {
+                        break opts.bridge;
+                    }
                     match input.trim() {
                         "haswell" => break Bridge::Haswell,
                         "sandy" => break Bridge::Sandy,
                         _ => eprintln!("Input must be either 'haswell' or 'sandy'"),
                     }
                 };
-                let output = loop {
-                    print!("Output file: ");
+                opts.output = loop {
+                    print!("Output file ({}): ", opts.output);
                     stdout.flush().unwrap();
                     let input = read_line();
                     if input.trim().is_empty() {
-                        eprintln!("Output file cannot be empty");
+                        break opts.output;
                     } else {
                         break input.trim().to_string();
                     }
                 };
-                profiler::rowhammer::main(fraction_of_phys_memory, cores, dimms, bridge, output);
+                println!(
+                    "Selected settings: -p {} -c {} -d {} -b {:?} -o {}",
+                    opts.fraction_of_phys_memory, opts.cores, opts.dimms, opts.bridge, opts.output
+                );
+                profiler::rowhammer::main(
+                    opts.fraction_of_phys_memory,
+                    opts.cores,
+                    opts.dimms,
+                    opts.bridge,
+                    opts.output,
+                );
                 break;
             }
             _ => {

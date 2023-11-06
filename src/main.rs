@@ -22,20 +22,32 @@ enum Command {
 #[derive(Args, Debug)]
 struct ProfilerArgs {
     /// How much of the physical memory that should be allocated during profiling
-    #[arg(long, short = 'p', default_value_t = 0.5)]
+    #[arg(long, short = 'p', default_value_t)]
     fraction_of_phys_memory: f64,
     /// How many cores are on the target machine
-    #[arg(long, short, default_value_t = 4)]
+    #[arg(long, short, default_value_t)]
     cores: u8,
     /// How many ram sticks on the target machine
-    #[arg(long, short, default_value_t = 2)]
+    #[arg(long, short, default_value_t)]
     dimms: u8,
     /// Which northbridge your CPU has (affects the DRAM mapping)
-    #[arg(long, short, value_enum, default_value = "haswell")]
+    #[arg(long, short, value_enum, default_value_t)]
     bridge: Bridge,
     /// File used to save the output
-    #[arg(long, short, default_value = "flips.out")]
+    #[arg(long, short, default_value_t)]
     output: String,
+}
+
+impl Default for ProfilerArgs {
+    fn default() -> Self {
+        Self {
+            fraction_of_phys_memory: 0.5,
+            cores: 4,
+            dimms: 2,
+            bridge: Bridge::Haswell,
+            output: "flips.out".to_string(),
+        }
+    }
 }
 
 #[derive(Args, Debug)]
@@ -50,6 +62,12 @@ struct AttackArgs {
 enum Bridge {
     Haswell,
     Sandy,
+}
+
+impl Default for Bridge {
+    fn default() -> Self {
+        Bridge::Haswell
+    }
 }
 
 fn main() {
