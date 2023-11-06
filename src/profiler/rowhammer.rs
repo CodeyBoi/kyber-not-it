@@ -13,7 +13,7 @@ use rand::seq::SliceRandom;
 
 use crate::{
     profiler::utils::{
-        collect_pages_by_row, count_flips_by_bit, rowhammer, setup_mapping, Consts, Page, PageData,
+        self, collect_pages_by_row, count_flips_by_bit, rowhammer, setup_mapping, Page, PageData,
     },
     Bridge,
 };
@@ -30,7 +30,7 @@ const PATTERN: u16 = BLAST;
 fn init_row(row: &[Page], pattern: u16) {
     for page in row {
         let base_ptr = page.virt_addr as *mut u16;
-        for i in 0..Consts::PAGE_SIZE / size_of_val(&pattern) {
+        for i in 0..utils::PAGE_SIZE / size_of_val(&pattern) {
             unsafe {
                 *base_ptr.add(i) = pattern;
             }
@@ -180,7 +180,7 @@ fn hammer_all_reachable_pages(
 
         // If any of the rows are not full we can't hammer them, so continue to the next iteration
         for i in 0..3 {
-            if pages_by_row[above_row_index + i].len() != row_size as usize / Consts::PAGE_SIZE {
+            if pages_by_row[above_row_index + i].len() != row_size as usize / utils::PAGE_SIZE {
                 rows_skipped += 1;
                 continue 'main;
             }
@@ -282,7 +282,7 @@ fn hammer_all_reachable_pages(
             }
         }
 
-        let pages_tested = tested_rows.len() * row_size / Consts::PAGE_SIZE;
+        let pages_tested = tested_rows.len() * row_size / utils::PAGE_SIZE;
         writeln!(
             status_file,
             "So far: {:.2} flips per page ({:.2} per row, {} flips total over {} pages tested)",

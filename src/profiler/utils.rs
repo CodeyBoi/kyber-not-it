@@ -14,12 +14,9 @@ use sysinfo::{System, SystemExt};
 
 use crate::Bridge;
 
-pub(crate) struct Consts;
-impl Consts {
-    pub(crate) const MAX_BITS: usize = 16;
-    pub(crate) const PAGE_SIZE: usize = 0x1000;
-    pub(crate) const NO_OF_READS: u64 = 3_000_000;
-}
+pub(crate) const MAX_BITS: usize = 16;
+pub(crate) const PAGE_SIZE: usize = 0x1000;
+pub(crate) const NO_OF_READS: u64 = 3_000_000;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Row {
@@ -39,7 +36,7 @@ pub(crate) struct Page {
 pub(crate) struct PageData {
     pub(crate) above_pfns: (u64, u64),
     pub(crate) below_pfns: (u64, u64),
-    pub(crate) flips: [u64; Consts::MAX_BITS],
+    pub(crate) flips: [u64; MAX_BITS],
 }
 
 impl Row {
@@ -107,7 +104,7 @@ impl Page {
     }
 
     pub(crate) fn phys_addr(&self) -> *mut u8 {
-        (self.pfn as usize * Consts::PAGE_SIZE) as *mut u8
+        (self.pfn as usize * PAGE_SIZE) as *mut u8
     }
 
     pub(crate) fn bank_index(&self, bridge: Bridge, dimms: u8) -> u8 {
@@ -149,7 +146,7 @@ impl PageData {
     pub(crate) fn new(
         above_pfns: (u64, u64),
         below_pfns: (u64, u64),
-        flips: [u64; Consts::MAX_BITS],
+        flips: [u64; MAX_BITS],
     ) -> Self {
         Self {
             above_pfns,
@@ -180,7 +177,7 @@ pub(crate) fn get_bank_bits(bridge: Bridge) -> Vec<Vec<u8>> {
 }
 
 pub(crate) fn get_block_by_order(order: u32) -> MmapMut {
-    let mem_size = Consts::PAGE_SIZE * 2_usize.pow(order);
+    let mem_size = PAGE_SIZE * 2_usize.pow(order);
     let mut mmap = MmapOptions::new()
         .len(mem_size)
         .populate()
@@ -188,7 +185,7 @@ pub(crate) fn get_block_by_order(order: u32) -> MmapMut {
         .expect("Failed to setup memory map over block");
 
     let ptr = mmap.as_mut_ptr();
-    for offset in (0..mmap.len()).step_by(Consts::PAGE_SIZE) {
+    for offset in (0..mmap.len()).step_by(PAGE_SIZE) {
         unsafe {
             *ptr.add(offset) = 1 + offset as u8;
         }
@@ -209,7 +206,7 @@ pub(crate) fn get_phys_memory_size() -> u64 {
 pub(crate) fn find_flips(page: &Page, initial_pattern: u16) -> Vec<(usize, usize)> {
     let mut flips = Vec::new();
     let base_ptr = page.virt_addr as *const u16;
-    for i in 0..Consts::PAGE_SIZE / 2 {
+    for i in 0..PAGE_SIZE / 2 {
         unsafe {
             let ptr = base_ptr.add(i);
             _mm_clflush(ptr as *const u8);
@@ -228,10 +225,10 @@ pub(crate) fn find_flips(page: &Page, initial_pattern: u16) -> Vec<(usize, usize
 /// # Returns
 /// An array of length 16, where each index corresponds to the number of flipped bits
 /// in that bit position.
-pub(crate) fn count_flips_by_bit(page: &Page, initial_pattern: u16) -> [u64; Consts::MAX_BITS] {
-    let mut flips = [0; Consts::MAX_BITS];
+pub(crate) fn count_flips_by_bit(page: &Page, initial_pattern: u16) -> [u64; MAX_BITS] {
+    let mut flips = [0; MAX_BITS];
     let base_ptr = page.virt_addr as *const u16;
-    for i in 0..Consts::PAGE_SIZE / 2 {
+    for i in 0..PAGE_SIZE / 2 {
         unsafe {
             let ptr = base_ptr.add(i);
             _mm_clflush(ptr as *const u8);
@@ -245,7 +242,7 @@ pub(crate) fn count_flips_by_bit(page: &Page, initial_pattern: u16) -> [u64; Con
 
 pub(crate) unsafe fn fill_memory(victim_va: *mut u8, above_va: *mut u8, below_va: *mut u8) {
     unsafe {
-        std::ptr::write_bytes(victim_va, 0x00, Consts::PAGE_SIZE);
+        std::ptr::write_bytes(victim_va, 0x00, PAGE_SIZE);
     }
 
     let above_va = above_va as *mut u16;
@@ -253,7 +250,7 @@ pub(crate) unsafe fn fill_memory(victim_va: *mut u8, above_va: *mut u8, below_va
 
     let pattern = 0x0100;
 
-    for index in 0..Consts::PAGE_SIZE / 2 {
+    for index in 0..PAGE_SIZE / 2 {
         unsafe {
             let above = above_va.add(index);
             let below = below_va.add(index);
@@ -273,7 +270,7 @@ pub(crate) fn setup_mapping(fraction_of_phys_memory: f64) -> MmapMut {
         .expect("failed to setup memory mapping");
 
     let ptr = mmap.as_mut_ptr();
-    for offset in (0..mmap.len()).step_by(Consts::PAGE_SIZE) {
+    for offset in (0..mmap.len()).step_by(PAGE_SIZE) {
         unsafe {
             *ptr.add(offset) = offset as u8;
         }
@@ -286,7 +283,7 @@ pub(crate) fn get_page_frame_number(
     pagemap: &mut PageMap,
     virtual_addr: *const u8,
 ) -> ProcResult<u64> {
-    match pagemap.get_info(virtual_addr as usize / Consts::PAGE_SIZE)? {
+    match pagemap.get_info(virtual_addr as usize / PAGE_SIZE)? {
         PageInfo::MemoryPage(mempage) => {
             //println!("FLAGS: {:#?}", mempage);
             Ok(mempage.get_page_frame_number().0)
@@ -295,27 +292,29 @@ pub(crate) fn get_page_frame_number(
     }
 }
 
-pub(crate) fn rowhammer(above_page: *const u8, below_page: *const u8) {
-    for _ in 0..Consts::NO_OF_READS {
+pub(crate) fn rowhammer(above_row: *const u8, below_row: *const u8) {
+    for _ in 0..NO_OF_READS {
         unsafe {
-            _mm_clflush(above_page);
-            above_page.read_volatile();
-            _mm_clflush(below_page);
-            below_page.read_volatile();
+            _mm_clflush(above_row);
+            above_row.read_volatile();
+            _mm_clflush(below_row);
+            below_row.read_volatile();
         }
     }
 }
+
+pub(crate) fn rowpress(above_row: *const u8, below_row: *const u8) {}
 
 pub(crate) fn collect_pages_by_row(mmap: &mut MmapMut, row_size: usize) -> ProcResult<Vec<Row>> {
     let base_ptr = mmap.as_mut_ptr();
     let mut rows = Vec::new();
     let pagemap = &mut Process::myself()?.pagemap()?;
 
-    for offset in (0..mmap.len()).step_by(Consts::PAGE_SIZE) {
+    for offset in (0..mmap.len()).step_by(PAGE_SIZE) {
         unsafe {
             let virtual_addr = base_ptr.add(offset);
             if let Ok(pfn) = get_page_frame_number(pagemap, virtual_addr) {
-                let physical_addr = pfn as usize * Consts::PAGE_SIZE;
+                let physical_addr = pfn as usize * PAGE_SIZE;
                 let presumed_row_index = physical_addr as usize / row_size;
                 // If the row index is larger than the number of rows, we
                 // push new rows until we have enough.
@@ -334,5 +333,5 @@ pub(crate) fn collect_pages_by_row(mmap: &mut MmapMut, row_size: usize) -> ProcR
 pub(crate) fn get_phys_addr(pagemap: &mut PageMap, virtual_addr: *const u8) -> ProcResult<u64> {
     let pfn = get_page_frame_number(pagemap, virtual_addr)?;
     // Physical address of frame is page_frame_number * page_size + offset
-    Ok((pfn * Consts::PAGE_SIZE as u64) | (virtual_addr as usize & (0x1000 - 1)) as u64)
+    Ok((pfn * PAGE_SIZE as u64) | (virtual_addr as usize & (0x1000 - 1)) as u64)
 }

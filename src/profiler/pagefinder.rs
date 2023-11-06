@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::profiler::utils::{
-    collect_pages_by_row, count_flips_by_bit, fill_memory, rowhammer, setup_mapping, Consts, Page,
+    self, collect_pages_by_row, count_flips_by_bit, fill_memory, rowhammer, setup_mapping, Page,
     PageData, Row,
 };
 
@@ -71,7 +71,7 @@ fn setup_page_candidate(
     pfn: u64,
     above_pfns: (u64, u64),
     below_pfns: (u64, u64),
-    target_flips: [u64; Consts::MAX_BITS],
+    target_flips: [u64; utils::MAX_BITS],
 ) -> Result<PageCandidate, &'static str> {
     // Find the rows that contains the target pages
     for index in 0..pages_by_row.len() - 2 {
@@ -228,7 +228,7 @@ fn get_candidate_pages(
                 *pfn,
                 *above_pfns,
                 *below_pfns,
-                [0; Consts::MAX_BITS],
+                [0; utils::MAX_BITS],
             ) {
                 Ok(page_candidate) => Some(page_candidate),
                 Err(_) => None,
@@ -263,7 +263,7 @@ fn profile_candidate_pages(page_candidates: &mut [PageCandidate]) {
         let mut risk_score = 0;
         let mut score = 0;
 
-        let mut hammer_flips = [0; Consts::MAX_BITS];
+        let mut hammer_flips = [0; utils::MAX_BITS];
 
         for _ in 0..TEST_ITERATIONS {
             thread::sleep(time::Duration::from_millis(100));
@@ -293,7 +293,7 @@ fn profile_candidate_pages(page_candidates: &mut [PageCandidate]) {
             }
 
             unsafe {
-                std::ptr::write_bytes(target_page.virt_addr, 0x00, Consts::PAGE_SIZE);
+                std::ptr::write_bytes(target_page.virt_addr, 0x00, utils::PAGE_SIZE);
             }
         }
 
