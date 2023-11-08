@@ -1,5 +1,5 @@
 use std::{
-    arch::x86_64::_mm_clflush,
+    arch::x86_64::{_mm_clflush, _mm_lfence, _mm_mfence},
     cell::RefCell,
     mem::size_of_val,
     ops::{Range, RangeFull},
@@ -303,7 +303,44 @@ pub(crate) fn rowhammer(above_row: *const u8, below_row: *const u8) {
     }
 }
 
-pub(crate) fn rowpress(above_row: *const u8, below_row: *const u8) {}
+pub(crate) fn rowpress(
+    above_row: *const u8,
+    below_row: *const u8,
+    iters: usize,
+    aggressor_activations: usize,
+    reads: usize,
+) {
+    for _ in 0..iters {
+        unsafe {
+            _mm_lfence();
+        }
+
+        for _ in 0..aggressor_activations {
+            // Read both aggressor rows in sequence
+            for i in 0..reads {
+                unsafe {
+                    above_row.add(i).read_volatile();
+                }
+            }
+            for i in 0..reads {
+                unsafe {
+                    below_row.add(i).read_volatile();
+                }
+            }
+
+            for i in 0..reads {
+                unsafe {
+                    _mm_clflush(above_row.add(i));
+                    _mm_clflush(below_row.add(i));
+                }
+            }
+
+            unsafe {
+                _mm_mfence();
+            }
+        }
+    }
+}
 
 pub(crate) fn collect_pages_by_row(mmap: &mut MmapMut, row_size: usize) -> ProcResult<Vec<Row>> {
     let base_ptr = mmap.as_mut_ptr();

@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::{attack, attack_tester, profiler, Bridge, ProfilerArgs};
+use crate::{attack, attack_tester, profiler, AttackMethod, Bridge, ProfilerArgs};
 
 fn read_line() -> String {
     let mut input = String::new();
@@ -69,8 +69,13 @@ fn run_profiler() {
 
     let mut opts = ProfilerArgs::default();
     println!(
-        "\t1. Run with default settings (-p {} -c {} -d {} -b {:?} -o {})",
-        opts.fraction_of_phys_memory, opts.cores, opts.dimms, opts.bridge, opts.output
+        "\t1. Run with default settings (-p {} -c {} -d {} -b {:?} -o {} -a {:?})",
+        opts.fraction_of_phys_memory,
+        opts.cores,
+        opts.dimms,
+        opts.bridge,
+        opts.output,
+        opts.attack_method
     );
     println!("\t2. Run with custom settings\n");
 
@@ -87,6 +92,7 @@ fn run_profiler() {
                     opts.dimms,
                     opts.bridge,
                     opts.output,
+                    opts.attack_method,
                 );
                 break;
             }
@@ -144,7 +150,7 @@ fn run_profiler() {
                     if input.trim().is_empty() {
                         break opts.bridge;
                     }
-                    match input.trim() {
+                    match input.trim().to_lowercase().as_str() {
                         "haswell" => break Bridge::Haswell,
                         "sandy" => break Bridge::Sandy,
                         _ => eprintln!("Input must be either 'haswell' or 'sandy'"),
@@ -160,9 +166,27 @@ fn run_profiler() {
                         break input.trim().to_string();
                     }
                 };
+                opts.attack_method = loop {
+                    print!("Attack method ({:?}): ", opts.attack_method);
+                    stdout.flush().unwrap();
+                    let input = read_line();
+                    if input.trim().is_empty() {
+                        break opts.attack_method;
+                    }
+                    match input.trim().to_lowercase().as_str() {
+                        "rowhammer" => break AttackMethod::RowHammer,
+                        "rowpress" => break AttackMethod::RowPress,
+                        _ => eprintln!("Input must be either 'rowhammer' or 'rowpress'"),
+                    }
+                };
                 println!(
-                    "Selected settings: -p {} -c {} -d {} -b {:?} -o {}",
-                    opts.fraction_of_phys_memory, opts.cores, opts.dimms, opts.bridge, opts.output
+                    "Selected settings: -p {} -c {} -d {} -b {:?} -o {} -a {:?}",
+                    opts.fraction_of_phys_memory,
+                    opts.cores,
+                    opts.dimms,
+                    opts.bridge,
+                    opts.output,
+                    opts.attack_method
                 );
                 profiler::rowhammer::main(
                     opts.fraction_of_phys_memory,
@@ -170,6 +194,7 @@ fn run_profiler() {
                     opts.dimms,
                     opts.bridge,
                     opts.output,
+                    opts.attack_method,
                 );
                 break;
             }

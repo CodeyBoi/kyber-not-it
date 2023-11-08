@@ -11,6 +11,8 @@ use memmap2::MmapMut;
 use procfs::ProcResult;
 use rand::seq::SliceRandom;
 
+use crate::profiler::utils::rowpress;
+use crate::AttackMethod;
 use crate::{
     profiler::utils::{
         self, collect_pages_by_row, count_flips_by_bit, rowhammer, setup_mapping, Page, PageData,
@@ -94,6 +96,7 @@ fn hammer_all_reachable_pages(
     dimms: u8,
     bridge: Bridge,
     output: impl AsRef<Path>,
+    attack_method: AttackMethod,
 ) -> ProcResult<()> {
     let row_size = 128 * 1024 * dimms as usize;
 
@@ -206,28 +209,33 @@ fn hammer_all_reachable_pages(
             // so we pick the first one
             match (above, below) {
                 (Some(a), Some(b)) => {
-                    rowhammer(a.virt_addr, b.virt_addr);
+                    match attack_method {
+                        AttackMethod::RowHammer => rowhammer(a.virt_addr, b.virt_addr),
+                        AttackMethod::RowPress => {
+                            rowpress(a.virt_addr, b.virt_addr, 800_000, 3, 32)
+                        }
+                    };
                 }
                 _ => continue,
             }
         }
 
-        if before.elapsed() < Duration::from_secs(7) {
-            println!(
-                "[!] Hammering row {} took less than 7 seconds, skipping...\n",
-                target_row_index
-            );
-            rows_skipped += 1;
+        // if before.elapsed() < Duration::from_secs(7) {
+        //     println!(
+        //         "[!] Hammering row {} took less than 7 seconds, skipping...\n",
+        //         target_row_index
+        //     );
+        //     rows_skipped += 1;
 
-            for (above, below) in above_pages_by_bank
-                .iter()
-                .map(|p| p.first())
-                .zip(below_pages_by_bank.iter().map(|p| p.first()))
-            {
-                println!("ERROR:\nAbove: {:?},\nBelow: {:?}", above, below);
-            }
-            continue 'main;
-        }
+        //     for (above, below) in above_pages_by_bank
+        //         .iter()
+        //         .map(|p| p.first())
+        //         .zip(below_pages_by_bank.iter().map(|p| p.first()))
+        //     {
+        //         println!("ERROR:\nAbove: {:?},\nBelow: {:?}", above, below);
+        //     }
+        //     continue 'main;
+        // }
 
         tested_rows.insert(target_row_index);
 
@@ -310,8 +318,9 @@ pub(crate) fn main(
     dimms: u8,
     bridge: Bridge,
     output: impl AsRef<Path>,
+    attack_method: AttackMethod,
 ) {
     println!("Setting up memory mapping...");
     let mut mmap = setup_mapping(fraction_of_phys_memory);
-    hammer_all_reachable_pages(&mut mmap, cores, dimms, bridge, output).unwrap();
+    hammer_all_reachable_pages(&mut mmap, cores, dimms, bridge, output, attack_method).unwrap();
 }

@@ -36,6 +36,8 @@ struct ProfilerArgs {
     /// File used to save the output
     #[arg(long, short, default_value_t)]
     output: String,
+    #[arg(long, short, value_enum, default_value_t)]
+    attack_method: AttackMethod,
 }
 
 impl Default for ProfilerArgs {
@@ -46,6 +48,7 @@ impl Default for ProfilerArgs {
             dimms: 2,
             bridge: Bridge::Haswell,
             output: "flips.out".to_string(),
+            attack_method: AttackMethod::RowHammer,
         }
     }
 }
@@ -70,6 +73,18 @@ impl Default for Bridge {
     }
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum AttackMethod {
+    RowHammer,
+    RowPress,
+}
+
+impl Default for AttackMethod {
+    fn default() -> Self {
+        AttackMethod::RowHammer
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
     match cli.command {
@@ -82,6 +97,7 @@ fn main() {
                     args.dimms,
                     args.bridge,
                     args.output,
+                    args.attack_method,
                 );
             }
             Command::Evaluate(args) => {
