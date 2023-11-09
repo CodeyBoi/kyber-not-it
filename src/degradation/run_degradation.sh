@@ -1,26 +1,30 @@
 #! /bin/bash
 
-# Check if the binary file exists
-if [ ! -f degrade ]; then
-    # Compile the source code if the binary file does not exist
-    echo "degrade file does not exist. Compiling..."
-    gcc degrade.c -L../libs -lmastik -ldwarf -lelf -lbfd -O3 -o degrade
-fi
+# Function to compile 'degrade' if it doesn't exist
+compile_degrade() {
+    if [ ! -f degrade ]; then
+        echo "degrade file does not exist. Compiling..."
+        gcc degrade.c -L../libs -lmastik -ldwarf -lelf -lbfd -O3 -o degrade
+    fi
+}
 
-# Declare an array of taskset masks
-declare -a cpu_masks=("0x2" "0x20" "0x4" "0x1")
-
+# Function to run degradation with taskset masks
 run_degradation(){
+    # Declare an array of taskset masks
+    declare -a cpu_masks=("0x2" "0x20" "0x4" "0x1")
     for mask in "${cpu_masks[@]}"; do
         # Run the degradation binary with the taskset mask
         taskset $mask ./degrade &
     done
 }
 
+# Function to kill all the degradation processes
 kill_degradation()  {
-    # Kill all the degradation processes
     pkill -f "degrade"
 }
+
+# Compile the 'degrade' binary
+compile_degrade
 
 # Run degradations
 run_degradation
