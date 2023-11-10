@@ -22,19 +22,19 @@ enum Command {
 #[derive(Args, Debug)]
 struct ProfilerArgs {
     /// How much of the physical memory that should be allocated during profiling
-    #[arg(long, short = 'p', default_value_t)]
+    #[arg(long, short = 'p', default_value_t = 0.5)]
     fraction_of_phys_memory: f64,
     /// How many cores are on the target machine
-    #[arg(long, short, default_value_t)]
+    #[arg(long, short, default_value_t = 4)]
     cores: u8,
     /// How many ram sticks on the target machine
-    #[arg(long, short, default_value_t)]
+    #[arg(long, short, default_value_t = 2)]
     dimms: u8,
     /// Which northbridge your CPU has (affects the DRAM mapping)
     #[arg(long, short, value_enum, default_value_t)]
     bridge: Bridge,
     /// File used to save the output
-    #[arg(long, short, default_value_t)]
+    #[arg(long, short, default_value = "flips.out")]
     output: String,
     #[arg(long, short, value_enum, default_value_t)]
     attack_method: AttackMethod,
