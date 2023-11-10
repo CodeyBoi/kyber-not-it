@@ -8,10 +8,11 @@ compile_degrade() {
     fi
 }
 
+# Declare an array of taskset masks
+declare -a cpu_masks=("0x2" "0x20" "0x4" "0x1")
+
 # Function to run degradation with taskset masks
 run_degradation(){
-    # Declare an array of taskset masks
-    declare -a cpu_masks=("0x2" "0x20" "0x4" "0x1")
     for mask in "${cpu_masks[@]}"; do
         # Run the degradation binary with the taskset mask
         taskset $mask ./degrade &
@@ -30,10 +31,12 @@ compile_degrade
 run_degradation
 
 # Run the FrodoKEM script
-/home/development/Frodo/PQCrypto-LWEKE/frodo640/test_KEM &
+cd /home/development/Frodo/PQCrypto-LWEKE/frodo640/
+taskset ${cpu_masks[0]} ./test_KEM &
 
-# Wait for all the the FrodoKEM process to finish
-wait
+# Wait for the FrodoKEM process to finish
+kem_pid=$!
+wait $kem_pid
 
 # Kill the degradation processes
 kill_degradation
