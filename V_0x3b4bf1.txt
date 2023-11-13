@@ -1,0 +1,2 @@
+	Page        aPFN1       aPFN2       bPFN1       bPFN2       Score  Flipped bits
+>	0x3b4bf1    0x3b4bb4    0x3b4bb7    0x3b4c0d    0x3b4c0e    400    [0, 0, 0, 0, 0, 0, 0, 0, 30, 0, 0, 0, 0, 0, 0, 0]
