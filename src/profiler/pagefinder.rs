@@ -16,6 +16,7 @@ const RISK_THRESHOLD: u32 = 0;
 const SCORE_THRESHOLD: u32 = 3;
 const CANDIDATES_THRESHOLD: f64 = 0.9;
 
+#[derive(Debug)]
 pub(crate) struct PageCandidate {
     pub(crate) target_page: Page,
     pub(crate) above_pages: (Page, Page),
@@ -216,7 +217,7 @@ fn get_candidate_pfns(input_path: impl AsRef<Path>) -> Vec<(u64, (u64, u64), (u6
 }
 
 /// Read the flips.out file and return a vector of potential exploitable pages
-fn get_candidate_pages(
+pub(crate) fn get_candidate_pages(
     pages_by_row: &[Row],
     candidate_pfns: &[(u64, (u64, u64), (u64, u64))],
 ) -> Vec<PageCandidate> {

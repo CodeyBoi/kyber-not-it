@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::{attack, attack_tester, profiler, AttackMethod, Bridge, ProfilerArgs};
+use crate::{attack, attack_tester, profiler, AttackArgs, AttackMethod, Bridge, ProfilerArgs};
 
 fn read_line() -> String {
     let mut input = String::new();
@@ -209,7 +209,8 @@ fn run_profiler() {
 fn run_evaluation() {
     let mut stdout = io::stdout();
 
-    println!("\t1. Run with default settings (-d 2)");
+    let mut opts = ProfilerArgs::default();
+    println!("\t1. Run with default settings (-d {})", opts.dimms);
     println!("\t2. Run with custom settings\n");
 
     print!("Select command (1-2): ");
@@ -219,21 +220,25 @@ fn run_evaluation() {
         let input = read_line();
         match input.trim() {
             "1" => {
-                profiler::pagefinder::main(2);
+                profiler::pagefinder::main(opts.dimms);
                 break;
             }
             "2" => {
-                let dimms: u8 = loop {
+                opts.dimms = loop {
                     print!("Number of RAM sticks on target machine: ");
                     stdout.flush().unwrap();
                     let input = read_line();
+                    if input.trim().is_empty() {
+                        break opts.dimms;
+                    }
                     if let Ok(d) = input.trim().parse() {
                         break d;
                     } else {
                         eprintln!("Input must be an integer");
                     }
                 };
-                profiler::pagefinder::main(dimms);
+                println!("Selected settings: -d {}", opts.dimms);
+                profiler::pagefinder::main(opts.dimms);
                 break;
             }
             _ => {
@@ -247,7 +252,12 @@ fn run_evaluation() {
 fn run_attack() {
     let mut stdout = io::stdout();
 
-    println!("\t1. Run with default settings (-p 0.5, no testing)");
+    let mut opts = AttackArgs::default();
+
+    println!(
+        "\t1. Run with default settings (-p {}, {})",
+        opts.fraction_of_phys_memory, opts.testing
+    );
     println!("\t2. Run with custom settings\n");
 
     print!("Select command (1-2): ");
@@ -257,14 +267,17 @@ fn run_attack() {
         let input = read_line();
         match input.trim() {
             "1" => {
-                attack::attack::main(0.5, false);
+                attack::attack::main(opts.fraction_of_phys_memory, opts.dimms, opts.testing);
                 break;
             }
             "2" => {
-                let fraction_of_phys_memory: f64 = loop {
+                opts.fraction_of_phys_memory = loop {
                     print!("Fraction of physical memory to profile (0.0-1.0): ");
                     stdout.flush().unwrap();
                     let input = read_line();
+                    if input.trim().is_empty() {
+                        break opts.fraction_of_phys_memory;
+                    }
                     if let Ok(f) = input.trim().parse() {
                         if f >= 0.0 && f <= 1.0 {
                             break f;
@@ -276,10 +289,27 @@ fn run_attack() {
                     }
                 };
 
-                let testing: bool = loop {
+                opts.dimms = loop {
+                    print!("Number of RAM sticks on target machine: ");
+                    stdout.flush().unwrap();
+                    let input = read_line();
+                    if input.trim().is_empty() {
+                        break opts.dimms;
+                    }
+                    if let Ok(d) = input.trim().parse() {
+                        break d;
+                    } else {
+                        eprintln!("Input must be an integer");
+                    }
+                };
+
+                opts.testing = loop {
                     print!("Testing mode (true/false, t/f): ");
                     stdout.flush().unwrap();
                     let input = read_line();
+                    if input.trim().is_empty() {
+                        break opts.testing;
+                    }
                     match input.trim() {
                         "true" | "t" => break true,
                         "false" | "f" => break false,
@@ -287,7 +317,7 @@ fn run_attack() {
                     }
                 };
 
-                attack::attack::main(fraction_of_phys_memory, testing);
+                attack::attack::main(opts.fraction_of_phys_memory, opts.dimms, opts.testing);
                 break;
             }
             _ => {

