@@ -97,12 +97,12 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
             for offset in (0..block_mapping.len() / 2).step_by(utils::PAGE_SIZE) {
                 unsafe {
                     munmap(
-                        ptr.add(utils::PAGE_SIZE * offset) as *mut c_void,
+                        ptr.add(offset) as *mut c_void,
                         utils::PAGE_SIZE,
                     )
                     .expect(&format!(
                         "Address: {:?} should be mapped",
-                        ptr.add(utils::PAGE_SIZE * offset)
+                        ptr.add(offset)
                     ));
                 }
             }
@@ -118,12 +118,12 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
             for offset in (block_mapping.len() / 2..block_mapping.len()).step_by(utils::PAGE_SIZE) {
                 unsafe {
                     munmap(
-                        ptr.add(utils::PAGE_SIZE * offset) as *mut c_void,
+                        ptr.add(offset) as *mut c_void,
                         utils::PAGE_SIZE,
                     )
                     .expect(&format!(
                         "Address: {:?} should be mapped",
-                        ptr.add(utils::PAGE_SIZE * offset)
+                        ptr.add(offset)
                     ));
                 }
             }
