@@ -252,7 +252,7 @@ fn hammer_all_reachable_pages(
             let above_pages = find_pfns_in_same_bank(target_page, &above_row[..], bridge, dimms);
             let below_pages = find_pfns_in_same_bank(target_page, &below_row[..], bridge, dimms);
 
-            let flips = count_flips_by_bit(target_page, INIT_PATTERN);
+            let (flips, flip_offsets) = count_flips_by_bit(target_page, INIT_PATTERN);
             match target_page.data {
                 Some(ref mut data) => {
                     for (old_flip, new_flip) in data.flips.iter_mut().zip(flips) {
@@ -264,6 +264,7 @@ fn hammer_all_reachable_pages(
                         (above_pages.0.pfn, above_pages.1.pfn),
                         (below_pages.0.pfn, below_pages.1.pfn),
                         flips,
+                        flip_offsets,
                     ));
                 }
             }

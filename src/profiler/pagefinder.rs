@@ -73,6 +73,7 @@ fn setup_page_candidate(
     above_pfns: (u64, u64),
     below_pfns: (u64, u64),
     target_flips: [u64; utils::MAX_BITS],
+    flip_offsets: Vec<usize>,
 ) -> Result<PageCandidate, &'static str> {
     // Find the rows that contains the target pages
     for index in 0..pages_by_row.len() - 2 {
@@ -103,7 +104,7 @@ fn setup_page_candidate(
         let mut target_page = target_page.clone();
 
         // If pages are found, create a PageCandidate
-        target_page.data = Some(PageData::new(above_pfns, below_pfns, target_flips));
+        target_page.data = Some(PageData::new(above_pfns, below_pfns, target_flips, flip_offsets));
         let page_candidate = PageCandidate::new(
             target_page,
             (above_page1.clone(), above_page2.clone()),
@@ -140,17 +141,19 @@ fn output_page(page_candidate: &PageCandidate) -> io::Result<()> {
         .expect("Flips should be defined at this stage")
         .flips;
 
+    let flip_offsets = page_candidate.target_page.data.as_ref().unwrap().flip_offsets.to_owned();
+
     let width = 12;
     file.write_all(
         format!(
-            "\t{:<width$}{:<width$}{:<width$}{:<width$}{:<width$}{:<7}{}\n",
-            "Page", "aPFN1", "aPFN2", "bPFN1", "bPFN2", "Score", "Flipped bits"
+            "\t{:<width$}{:<width$}{:<width$}{:<width$}{:<width$}{:<7}{:<}{}\n",
+            "Page", "aPFN1", "aPFN2", "bPFN1", "bPFN2", "Score", "Flipped bits", "Offsets"
         )
         .as_bytes(),
     )?;
     file.write_all(
         format!(
-            ">\t{:<#width$x}{:<#width$x}{:<#width$x}{:<#width$x}{:<#width$x}{:<7}{:?}",
+            ">\t{:<#width$x}{:<#width$x}{:<#width$x}{:<#width$x}{:<#width$x}{:<7}{:<36?}{:?}",
             page_candidate.target_page.pfn,
             page_candidate.above_pages.0.pfn,
             page_candidate.above_pages.1.pfn,
@@ -158,6 +161,7 @@ fn output_page(page_candidate: &PageCandidate) -> io::Result<()> {
             page_candidate.below_pages.1.pfn,
             page_candidate.score,
             flips,
+            flip_offsets,
         )
         .as_bytes(),
     )?;
@@ -167,7 +171,7 @@ fn output_page(page_candidate: &PageCandidate) -> io::Result<()> {
 
 fn get_candidate_pfns(input_path: impl AsRef<Path>) -> Vec<(u64, (u64, u64), (u64, u64))> {
     let mut pfns = Vec::new();
-    let file = File::open(input_path).expect("Failed to open file {path}");
+    let file = File::open(input_path).expect("Failed to open file");
 
     for line in BufReader::new(file).lines() {
         let line = line.expect("Error when reading line in file");
@@ -230,6 +234,7 @@ pub(crate) fn get_candidate_pages(
                 *above_pfns,
                 *below_pfns,
                 [0; utils::MAX_BITS],
+                Vec::new(),
             ) {
                 Ok(page_candidate) => Some(page_candidate),
                 Err(_) => None,
@@ -265,6 +270,7 @@ fn profile_candidate_pages(page_candidates: &mut [PageCandidate]) {
         let mut score = 0;
 
         let mut hammer_flips = [0; utils::MAX_BITS];
+        let mut flip_offsets = Vec::new();
 
         for _ in 0..TEST_ITERATIONS {
             thread::sleep(time::Duration::from_millis(100));
@@ -275,7 +281,7 @@ fn profile_candidate_pages(page_candidates: &mut [PageCandidate]) {
             }
             println!("Time: {:#?}", before.elapsed() / TEST_ITERATIONS);
 
-            let flips = count_flips_by_bit(&target_page, 0x0);
+            let (flips, offsets) = count_flips_by_bit(&target_page, 0x0);
 
             score += PageCandidate::calculate_score(&flips);
             risk_score += calculate_risk_score(&flips);
@@ -293,13 +299,17 @@ fn profile_candidate_pages(page_candidates: &mut [PageCandidate]) {
                 hammer_flips[index] += flips[index];
             }
 
+            for offset in offsets {
+                flip_offsets.push(offset);
+            }
+
             unsafe {
                 std::ptr::write_bytes(target_page.virt_addr, 0x00, utils::PAGE_SIZE);
             }
         }
 
         candidate.target_page.data.as_mut().unwrap().flips = hammer_flips;
-
+        candidate.target_page.data.as_mut().unwrap().flip_offsets = flip_offsets;
         candidate.score = score;
 
         println!(

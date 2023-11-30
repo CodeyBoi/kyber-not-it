@@ -37,6 +37,7 @@ pub(crate) struct PageData {
     pub(crate) above_pfns: (u64, u64),
     pub(crate) below_pfns: (u64, u64),
     pub(crate) flips: [u64; MAX_BITS],
+    pub(crate) flip_offsets: Vec<usize>,
 }
 
 impl Row {
@@ -147,11 +148,13 @@ impl PageData {
         above_pfns: (u64, u64),
         below_pfns: (u64, u64),
         flips: [u64; MAX_BITS],
+        flip_offsets: Vec<usize>,
     ) -> Self {
         Self {
             above_pfns,
             below_pfns,
             flips,
+            flip_offsets,
         }
     }
 }
@@ -225,19 +228,28 @@ pub(crate) fn find_flips(page: &Page, initial_pattern: u16) -> Vec<(usize, usize
 /// # Returns
 /// An array of length 16, where each index corresponds to the number of flipped bits
 /// in that bit position.
-pub(crate) fn count_flips_by_bit(page: &Page, initial_pattern: u16) -> [u64; MAX_BITS] {
+/// The offsets in the page where the bits are flipped.
+pub(crate) fn count_flips_by_bit(page: &Page, initial_pattern: u16) -> ([u64; MAX_BITS], Vec<usize>) {
     let mut flips = [0; MAX_BITS];
     let base_ptr = page.virt_addr as *const u16;
+    let mut flip_offsets = Vec::new();
+
     for i in 0..PAGE_SIZE / 2 {
         unsafe {
             let ptr = base_ptr.add(i);
             _mm_clflush(ptr as *const u8);
             for bit in 0..size_of_val(&initial_pattern) * 8 {
-                flips[bit] += (((*ptr >> bit) & 1) ^ ((initial_pattern >> bit) & 1)) as u64;
+                // If the bit is flipped, add the offset to the list of offsets
+                let set = (((*ptr >> bit) & 1) ^ ((initial_pattern >> bit) & 1)) as u64;
+
+                if set == 1 {
+                    flip_offsets.push(i);
+                    flips[bit] += set;
+                }
             }
         }
     }
-    flips
+    (flips, flip_offsets)
 }
 
 pub(crate) unsafe fn fill_memory(victim_va: *mut u8, above_va: *mut u8, below_va: *mut u8) {
