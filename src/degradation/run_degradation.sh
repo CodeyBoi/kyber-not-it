@@ -1,16 +1,14 @@
 #! /bin/bash
-cd /home/development/kyber-vincent/src/degradation
+cd src/degradation
+
+# Declare an array of taskset masks
+#declare -a cpu_masks=("")
+declare -a cpu_masks=("$@")
 
 # Function to compile 'degrade' if it doesn't exist
 compile_degrade() {
-    if [ ! -f degrade ]; then
-        echo "degrade file does not exist. Compiling..."
-        gcc degrade.c -L../libs -lmastik -ldwarf -lelf -lbfd -O3 -o degrade
-    fi
+    gcc degrade.c -L ../libs -lmastik -ldwarf -lelf -lbfd -O3 -o degrade
 }
-
-# Declare an array of taskset masks
-declare -a cpu_masks=("0x2" "0x20" "0x4" "0x1")
 
 # Function to run degradation with taskset masks
 run_degradation(){
