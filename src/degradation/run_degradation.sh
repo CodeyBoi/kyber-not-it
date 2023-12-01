@@ -1,13 +1,21 @@
 #! /bin/bash
 cd src/degradation
 
-# Declare an array of taskset masks
-#declare -a cpu_masks=("")
-declare -a cpu_masks=("$@")
+# Check if masks are provided
+if [ "$#" -gt 0 ]; then
+    # If arguments are provided, populate the mask array
+    declare -a cpu_masks=("$@")
+else
+    # If no arguments, use default masks
+    declare -a cpu_masks=("0x2" "0x20" "0x4" "0x1")
+fi
 
 # Function to compile 'degrade' if it doesn't exist
 compile_degrade() {
-    gcc degrade.c -L ../libs -lmastik -ldwarf -lelf -lbfd -O3 -o degrade
+    if [ ! -f degrade ]; then
+        echo "degrade file does not exist. Compiling..."
+        gcc degrade.c -L../libs -lmastik -ldwarf -lelf -lbfd -O3 -o degrade
+    fi
 }
 
 # Function to run degradation with taskset masks
