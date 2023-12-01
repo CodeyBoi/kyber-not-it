@@ -104,7 +104,12 @@ fn setup_page_candidate(
         let mut target_page = target_page.clone();
 
         // If pages are found, create a PageCandidate
-        target_page.data = Some(PageData::new(above_pfns, below_pfns, target_flips, flip_offsets));
+        target_page.data = Some(PageData::new(
+            above_pfns,
+            below_pfns,
+            target_flips,
+            flip_offsets,
+        ));
         let page_candidate = PageCandidate::new(
             target_page,
             (above_page1.clone(), above_page2.clone()),
@@ -141,19 +146,25 @@ fn output_page(page_candidate: &PageCandidate) -> io::Result<()> {
         .expect("Flips should be defined at this stage")
         .flips;
 
-    let flip_offsets = page_candidate.target_page.data.as_ref().unwrap().flip_offsets.to_owned();
+    let flip_offsets = page_candidate
+        .target_page
+        .data
+        .as_ref()
+        .unwrap()
+        .flip_offsets
+        .to_owned();
 
     let width = 12;
     file.write_all(
         format!(
-            "\t{:<width$}{:<width$}{:<width$}{:<width$}{:<width$}{:<7}{:<}{}\n",
+            "\t{:<width$}{:<width$}{:<width$}{:<width$}{:<width$}{:<7}{:<36}{}\n",
             "Page", "aPFN1", "aPFN2", "bPFN1", "bPFN2", "Score", "Flipped bits", "Offsets"
         )
         .as_bytes(),
     )?;
     file.write_all(
         format!(
-            ">\t{:<#width$x}{:<#width$x}{:<#width$x}{:<#width$x}{:<#width$x}{:<7}{:<36?}{:?}",
+            ">\t{:<#width$x}{:<#width$x}{:<#width$x}{:<#width$x}{:<#width$x}{:<7}{:?}{:?}",
             page_candidate.target_page.pfn,
             page_candidate.above_pages.0.pfn,
             page_candidate.above_pages.1.pfn,
@@ -299,8 +310,11 @@ fn profile_candidate_pages(page_candidates: &mut [PageCandidate]) {
                 hammer_flips[index] += flips[index];
             }
 
+            println!("Offsets: {:?}", offsets);
             for offset in offsets {
-                flip_offsets.push(offset);
+                if !flip_offsets.contains(&offset) {
+                    flip_offsets.push(offset);
+                }
             }
 
             unsafe {
@@ -333,7 +347,6 @@ pub(crate) fn main(dimms: u8) {
     println!("number of pfns in flips.out: {}", candidate_pfns.len());
     let result = loop {
         fraction_of_phys_memory += 0.1;
-
         if fraction_of_phys_memory > 0.95 {
             break None;
         }

@@ -1,2 +1,2 @@
-	Page        aPFN1       aPFN2       bPFN1       bPFN2       Score  Flipped bits
->	0x400b3a    0x400ae5    0x400ae6    0x400b7c    0x400b7f    400    [0, 0, 0, 0, 0, 0, 0, 0, 30, 0, 0, 0, 0, 0, 0, 0]
+	Page        aPFN1       aPFN2       bPFN1       bPFN2       Score  Flipped bits                        Offsets
+>	0x400b3a    0x400ae5    0x400ae6    0x400b7c    0x400b7f    400    [0, 0, 0, 0, 0, 0, 0, 0, 30, 0, 0, 0, 0, 0, 0, 0][733, 1217, 1769]
