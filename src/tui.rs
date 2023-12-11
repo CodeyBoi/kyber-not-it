@@ -255,8 +255,8 @@ fn run_attack() {
     let mut opts = AttackArgs::default();
 
     println!(
-        "\t1. Run with default settings (-p {}, {})",
-        opts.fraction_of_phys_memory, opts.testing
+        "\t1. Run with default settings (-p {:.1} -d {} -t {} -n {})",
+        opts.fraction_of_phys_memory, opts.dimms, opts.testing, opts.number_of_dummy_pages
     );
     println!("\t2. Run with custom settings\n");
 
@@ -267,12 +267,20 @@ fn run_attack() {
         let input = read_line();
         match input.trim() {
             "1" => {
-                attack::attack::main(opts.fraction_of_phys_memory, opts.dimms, opts.testing);
+                attack::attack::main(
+                    opts.fraction_of_phys_memory,
+                    opts.dimms,
+                    opts.testing,
+                    opts.number_of_dummy_pages,
+                );
                 break;
             }
             "2" => {
                 opts.fraction_of_phys_memory = loop {
-                    print!("Fraction of physical memory to profile (0.0-1.0): ");
+                    print!(
+                        "Fraction of physical memory to profile ({:.1}): ",
+                        opts.fraction_of_phys_memory
+                    );
                     stdout.flush().unwrap();
                     let input = read_line();
                     if input.trim().is_empty() {
@@ -290,7 +298,7 @@ fn run_attack() {
                 };
 
                 opts.dimms = loop {
-                    print!("Number of RAM sticks on target machine: ");
+                    print!("Number of RAM sticks on target machine ({}): ", opts.dimms);
                     stdout.flush().unwrap();
                     let input = read_line();
                     if input.trim().is_empty() {
@@ -304,7 +312,7 @@ fn run_attack() {
                 };
 
                 opts.testing = loop {
-                    print!("Testing mode (true/false, t/f): ");
+                    print!("Testing mode ({}): ", opts.testing);
                     stdout.flush().unwrap();
                     let input = read_line();
                     if input.trim().is_empty() {
@@ -317,7 +325,29 @@ fn run_attack() {
                     }
                 };
 
-                attack::attack::main(opts.fraction_of_phys_memory, opts.dimms, opts.testing);
+                opts.number_of_dummy_pages = loop {
+                    print!(
+                        "Number of dummy pages to allocate ({}): ",
+                        opts.number_of_dummy_pages
+                    );
+                    stdout.flush().unwrap();
+                    let input = read_line();
+                    if input.trim().is_empty() {
+                        break opts.number_of_dummy_pages;
+                    }
+                    if let Ok(d) = input.trim().parse() {
+                        break d;
+                    } else {
+                        eprintln!("Input must be an integer");
+                    }
+                };
+
+                attack::attack::main(
+                    opts.fraction_of_phys_memory,
+                    opts.dimms,
+                    opts.testing,
+                    opts.number_of_dummy_pages,
+                );
                 break;
             }
             _ => {
