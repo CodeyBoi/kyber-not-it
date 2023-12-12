@@ -231,20 +231,17 @@ pub(crate) fn main(
         hammer = false;
     }
 
-    let mut victim_pfns = Vec::new();
-    victim_pfns.push("0x3b4bf1");
-    victim_pfns.push("0x3dd31e");
-    victim_pfns.push("0x400b3a");
+    let victim_pfns = [0x3b4bf1, 0x3dd31e, 0x400b3a];
 
     let mut victim_pages = Vec::new();
 
     for pfn in &victim_pfns {
-        let file = format!("data/V_{}.out", pfn);
+        let file = format!("data/V_{:#x}.out", pfn);
         victim_pages.push(get_page_pfns(file).unwrap());
     }
 
     println!("Setting up memory mapping...");
-    let (_, pages_by_row, victims) = loop {
+    let (mmap, pages_by_row, victims) = loop {
         std::mem::drop(mmap);
         mmap = setup_mapping(fraction_of_phys_memory);
 
@@ -261,7 +258,14 @@ pub(crate) fn main(
         let victims = get_candidate_pages(&pages_by_row, &victim_pages);
 
         if victims.len() != victim_pfns.len() {
-            println!("Couldn't find all victim pages in mapping, Remapping!");
+            let missed_pfns = victim_pfns
+                .iter()
+                .filter(|pfn| !victims.iter().any(|page| page.target_page.pfn == **pfn))
+                .collect::<Vec<_>>();
+            println!(
+                "Couldn't find all victim pages in mapping, remapping! Missing pages: {:#x?}",
+                missed_pfns,
+            );
             continue;
         }
 
