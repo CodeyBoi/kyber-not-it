@@ -1,5 +1,12 @@
 {
-    "[rust]": {
-        "editor.formatOnSave": true
-    },
+  "[rust]": {
+    "editor.formatOnSave": true
+  },
+  "C_Cpp.default.cStandard": "gnu11",
+  "files.associations": {
+    "stdio.h": "c",
+    "string.h": "c",
+    "sched.h": "c",
+    "cpu-set.h": "c"
+  }
 }

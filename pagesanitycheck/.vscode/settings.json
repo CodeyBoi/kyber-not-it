@@ -1,0 +1,7 @@
+{
+  "C_Cpp.default.cStandard": "gnu11",
+  "files.associations": {
+    "inttypes.h": "c",
+    "sched.h": "c"
+  }
+}

@@ -9,24 +9,25 @@
 #include <string.h>
 #include <unistd.h>
 
-int main(int argc, char *argv[])
+int testpage(int npages, int show_all_pages)
 {
-    int npages = argv[1] ? atoi(argv[1]) : 100;
-
     int pages[npages * PAGE_SIZE / sizeof(int)];
-    memset(pages, 0, npages * PAGE_SIZE);
-
     for (int i = 0; i < npages; i++)
     {
-        int idx = i * PAGE_SIZE / sizeof(int);
-        pages[idx] = i;
+        pages[i * PAGE_SIZE / sizeof(int)] = i + 1231;
     }
 
     int *first_addr = &pages[0];
     int *last_addr = &pages[npages * PAGE_SIZE / sizeof(int) - 1];
 
-    char cmd[200];
-    snprintf(cmd, 200, "sudo ./pagemap %d %p %p", getpid(), first_addr, last_addr);
-
-    system(cmd);
+    if (show_all_pages)
+    {
+        system("sudo ./pagemap2 $$");
+    }
+    else
+    {
+        char cmd[120];
+        snprintf(cmd, 120, "sudo ./pagemap %d %p %p", getpid(), first_addr, last_addr);
+        system(cmd);
+    }
 }

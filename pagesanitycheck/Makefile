@@ -1,7 +1,7 @@
 # Makefile for pagemap
 
 CC = gcc
-CFLAGS = -std=gnu11
+CFLAGS = -std=gnu11 -D_GNU_SOURCE
 
 .PHONY: all
 all: pagemap pagemap2 pagetest attacktest
