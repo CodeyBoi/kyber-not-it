@@ -229,7 +229,10 @@ pub(crate) fn find_flips(page: &Page, initial_pattern: u16) -> Vec<(usize, usize
 /// An array of length 16, where each index corresponds to the number of flipped bits
 /// in that bit position.
 /// The offsets in the page where the bits are flipped.
-pub(crate) fn count_flips_by_bit(page: &Page, initial_pattern: u16) -> ([u64; MAX_BITS], Vec<usize>) {
+pub(crate) fn count_flips_by_bit(
+    page: &Page,
+    initial_pattern: u16,
+) -> ([u64; MAX_BITS], Vec<usize>) {
     let mut flips = [0; MAX_BITS];
     let base_ptr = page.virt_addr as *const u16;
     let mut flip_offsets = Vec::new();
@@ -280,6 +283,8 @@ pub(crate) fn setup_mapping(fraction_of_phys_memory: f64) -> MmapMut {
         .populate()
         .map_anon()
         .expect("failed to setup memory mapping");
+
+    mmap.lock().expect("failed to lock mmap to RAM.");
 
     let ptr = mmap.as_mut_ptr();
     for offset in (0..mmap.len()).step_by(PAGE_SIZE) {

