@@ -311,12 +311,16 @@ pub(crate) fn get_page_frame_number(
 
 pub(crate) fn rowhammer(above_row: *const u8, below_row: *const u8) {
     for _ in 0..NO_OF_READS {
-        unsafe {
-            _mm_clflush(above_row);
-            above_row.read_volatile();
-            _mm_clflush(below_row);
-            below_row.read_volatile();
-        }
+        rowhammer_once(above_row, below_row);
+    }
+}
+
+pub(crate) fn rowhammer_once(above_row: *const u8, below_row: *const u8) {
+    unsafe {
+        _mm_clflush(above_row);
+        above_row.read_volatile();
+        _mm_clflush(below_row);
+        below_row.read_volatile();
     }
 }
 

