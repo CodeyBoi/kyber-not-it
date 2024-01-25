@@ -177,14 +177,14 @@ pub(crate) fn check_attack_time_needed(pages: &[PageCandidate]) {
         }
 
         if d_iterations == 1 {
-            break (elapsed.as_micros(), iterations);
+            break (elapsed, iterations);
         } else {
             d_iterations /= 2;
         }
     };
 
     println!(
-        "Time needed for at least 7 flips: {} us, with {} iterations",
+        "Time needed for at least 7 flips: {:?}, with {} iterations",
         time_needed, iterations_needed
     );
 }
