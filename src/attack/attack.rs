@@ -155,8 +155,8 @@ pub(crate) fn check_attack_time_needed(pages: &[PageCandidate]) {
             break iterations;
         } else {
             println!(
-                "Doubling iterations... (iterations: {}, time taken: {:?})",
-                iterations, time_taken
+                "Doubling iterations... (iterations: {}, time taken: {:?}, flips: {})",
+                iterations, time_taken, flips
             );
             iterations *= 2;
         }
