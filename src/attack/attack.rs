@@ -143,11 +143,15 @@ pub(crate) fn check_attack_time_needed(pages: &[PageCandidate]) {
     // Check upper limit of how many iterations are needed to get 7 flips
     let mut iterations = 1 << 10;
     let max_iterations_needed = loop {
-        let (_, flips) = check_attack(pages, iterations);
+        let (time_taken, flips) = check_attack(pages, iterations);
 
         if flips >= 7 {
             break iterations;
         } else {
+            println!(
+                "Doubling iterations... (iterations: {}, time taken: {:?})",
+                iterations, time_taken
+            );
             iterations *= 2;
         }
     };
@@ -158,10 +162,17 @@ pub(crate) fn check_attack_time_needed(pages: &[PageCandidate]) {
     let (time_needed, iterations_needed) = loop {
         let (elapsed, flips) = check_attack(pages, iterations);
 
+        println!(
+            "Got {} flips with {} iterations (took {:?} ms)",
+            flips, iterations, elapsed
+        );
+
         // If we didnt get enough flips, increase iterations. Else decrease.
         if flips < 7 {
+            println!("Increasing iterations by {}...", d_iterations);
             iterations += d_iterations;
         } else {
+            println!("Decreasing iterations by {}...", d_iterations);
             iterations -= d_iterations;
         }
 
