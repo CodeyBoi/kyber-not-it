@@ -11,7 +11,7 @@ use memmap2::MmapMut;
 use procfs::ProcResult;
 use rand::seq::SliceRandom;
 
-use crate::profiler::utils::rowpress;
+use crate::profiler::utils::{rowpress, NO_OF_READS};
 use crate::AttackMethod;
 use crate::{
     profiler::utils::{
@@ -210,7 +210,7 @@ fn hammer_all_reachable_pages(
             match (above, below) {
                 (Some(a), Some(b)) => {
                     match attack_method {
-                        AttackMethod::RowHammer => rowhammer(a.virt_addr, b.virt_addr),
+                        AttackMethod::RowHammer => rowhammer(a.virt_addr, b.virt_addr, NO_OF_READS),
                         AttackMethod::RowPress => {
                             rowpress(a.virt_addr, b.virt_addr, 800_000, 3, 32)
                         }

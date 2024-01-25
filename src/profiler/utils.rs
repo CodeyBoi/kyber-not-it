@@ -16,7 +16,7 @@ use crate::Bridge;
 
 pub(crate) const MAX_BITS: usize = 16;
 pub(crate) const PAGE_SIZE: usize = 0x1000;
-pub(crate) const NO_OF_READS: u64 = 3_000_000;
+pub(crate) const NO_OF_READS: usize = 3_000_000;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Row {
@@ -309,18 +309,14 @@ pub(crate) fn get_page_frame_number(
     }
 }
 
-pub(crate) fn rowhammer(above_row: *const u8, below_row: *const u8) {
-    for _ in 0..NO_OF_READS {
-        rowhammer_once(above_row, below_row);
-    }
-}
-
-pub(crate) fn rowhammer_once(above_row: *const u8, below_row: *const u8) {
-    unsafe {
-        _mm_clflush(above_row);
-        above_row.read_volatile();
-        _mm_clflush(below_row);
-        below_row.read_volatile();
+pub(crate) fn rowhammer(above_row: *const u8, below_row: *const u8, iters: usize) {
+    for _ in 0..iters {
+        unsafe {
+            _mm_clflush(above_row);
+            above_row.read_volatile();
+            _mm_clflush(below_row);
+            below_row.read_volatile();
+        }
     }
 }
 

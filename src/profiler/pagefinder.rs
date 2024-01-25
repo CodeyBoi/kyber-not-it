@@ -8,7 +8,7 @@ use std::{
 
 use crate::profiler::utils::{
     self, collect_pages_by_row, count_flips_by_bit, fill_memory, rowhammer, setup_mapping, Page,
-    PageData, Row,
+    PageData, Row, NO_OF_READS,
 };
 
 const TEST_ITERATIONS: u32 = 10;
@@ -288,7 +288,11 @@ fn profile_candidate_pages(page_candidates: &mut [PageCandidate]) {
 
             let before = Instant::now();
             for _ in 0..TEST_ITERATIONS {
-                rowhammer(above_pages.0.virt_addr, below_pages.0.virt_addr);
+                rowhammer(
+                    above_pages.0.virt_addr,
+                    below_pages.0.virt_addr,
+                    NO_OF_READS,
+                );
             }
             println!("Time: {:#?}", before.elapsed() / TEST_ITERATIONS);
 

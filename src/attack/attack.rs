@@ -20,7 +20,7 @@ use crate::profiler::{
     pagefinder::{get_candidate_pages, PageCandidate},
     utils::{
         self, collect_pages_by_row, count_flips_by_bit, fill_memory, get_block_by_order,
-        get_page_frame_number, rowhammer, rowhammer_once, setup_mapping,
+        get_page_frame_number, rowhammer, setup_mapping, NO_OF_READS,
     },
 };
 
@@ -80,7 +80,11 @@ fn sanity_check_attack(pages: &[PageCandidate]) {
 
     loop {
         for page in pages {
-            rowhammer(page.above_pages.0.virt_addr, page.below_pages.0.virt_addr);
+            rowhammer(
+                page.above_pages.0.virt_addr,
+                page.below_pages.0.virt_addr,
+                NO_OF_READS,
+            );
         }
 
         // Check if we've been running for set amount of time
@@ -123,10 +127,12 @@ fn check_attack(pages: &[PageCandidate], iterations: usize) -> (Duration, u64) {
 
     let start = Instant::now();
 
-    for _ in 0..iterations {
-        for page in pages {
-            rowhammer_once(page.above_pages.0.virt_addr, page.below_pages.0.virt_addr);
-        }
+    for page in pages {
+        rowhammer(
+            page.above_pages.0.virt_addr,
+            page.below_pages.0.virt_addr,
+            iterations,
+        );
     }
 
     let elapsed = start.elapsed();
@@ -357,7 +363,11 @@ fn rowhammer_attack(pages: &[PageCandidate], number_of_dummy_pages: usize) {
 
             loop {
                 for page in pages {
-                    rowhammer(page.above_pages.0.virt_addr, page.below_pages.0.virt_addr);
+                    rowhammer(
+                        page.above_pages.0.virt_addr,
+                        page.below_pages.0.virt_addr,
+                        NO_OF_READS,
+                    );
                 }
             }
         }
