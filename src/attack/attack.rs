@@ -20,7 +20,7 @@ use crate::profiler::{
     pagefinder::{get_candidate_pages, PageCandidate},
     utils::{
         self, collect_pages_by_row, count_flips_by_bit, fill_memory, get_block_by_order,
-        get_page_frame_number, rowhammer, setup_mapping,
+        get_page_frame_number, rowhammer, rowhammer_once, setup_mapping,
     },
 };
 
@@ -125,7 +125,7 @@ fn check_attack(pages: &[PageCandidate], iterations: usize) -> (Duration, u64) {
 
     for _ in 0..iterations {
         for page in pages {
-            rowhammer(page.above_pages.0.virt_addr, page.below_pages.0.virt_addr);
+            rowhammer_once(page.above_pages.0.virt_addr, page.below_pages.0.virt_addr);
         }
     }
 
